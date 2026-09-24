@@ -1,0 +1,6 @@
+node_modules/
+main.js
+kb.js
+data.json
+.DS_Store
+!test/fixtures/vault/.obsidian/plugins/next-up/data.json

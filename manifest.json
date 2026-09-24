@@ -1,0 +1,10 @@
+{
+  "id": "next-up",
+  "name": "Next Up",
+  "version": "0.2.0",
+  "minAppVersion": "1.4.0",
+  "description": "Tasks as notes, shown in filtered, nested, drag-and-drop lists. Tags as board columns, deadlines, one-line add from any list.",
+  "author": "Solal Stern",
+  "authorUrl": "https://github.com/sSolal",
+  "isDesktopOnly": false
+}
