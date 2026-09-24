@@ -19,6 +19,8 @@ export interface TaskData {
   /** Basenames of the tasks this one depends on. */
   dependsOn: string[];
   project?: string;
+  /** Basenames of the people this task is about. */
+  people: string[];
   /** Tags, lower-cased, without "#". */
   tags: string[];
   /** Position among siblings (smaller first). */
@@ -258,6 +260,7 @@ export function taskFromFrontmatter(
     parentPath,
     dependsOn: linkList(fm[f.dependsOn]),
     project: linkBasename(fm[f.project]),
+    people: linkList(fm[f.person]),
     tags: parseTags(fm[f.tags]),
     order: parseNumber(fm[f.order]),
     mtime,

@@ -1,6 +1,6 @@
 import { App, Notice, TFile, TFolder, normalizePath } from "obsidian";
 import type { CaptureKind, NextUpSettings } from "./settingsTypes.ts";
-import { type TaskData, type TaskIndex, buildIndex, fillPlaceholders, isoDate, safeFileName, taskFromFrontmatter } from "./model.ts";
+import { type TaskData, type TaskIndex, buildIndex, fillPlaceholders, isoDate, linkList, safeFileName, taskFromFrontmatter } from "./model.ts";
 import { type MovePatch, patchTags } from "./query.ts";
 
 export interface NewTaskSpec {
@@ -14,6 +14,8 @@ export interface NewTaskSpec {
   parentPath?: string;
   dependsOn?: string[];
   project?: string;
+  /** basenames of the people the task is about */
+  people?: string[];
   order?: number;
 }
 
@@ -40,9 +42,10 @@ export class TaskStore {
     this.cache = null;
   }
 
-  private isTemplate(path: string): boolean {
+  isTemplate(path: string): boolean {
     const s = this.settings();
     if (s.taskTemplate && normalizePath(s.taskTemplate) === path) return true;
+    if (s.personTemplate && normalizePath(s.personTemplate) === path) return true;
     return s.kb.templateFolders.some((f) => f && path.startsWith(normalizePath(f) + "/"));
   }
 
@@ -171,7 +174,22 @@ export class TaskStore {
     if (p.owner) patch[f.owner] = p.owner;
     if (p.project) patch[f.project] = this.linkByName(p.project, file.path);
     if (Object.keys(patch).length) await this.update(file, patch);
+    if (p.person) await this.addPerson(file, p.person, p.removePerson);
     if (p.status) await this.setStatus(file, p.status);
+  }
+
+  /** Add a person link to a task's list, keeping the others (but `replace`, when given). */
+  async addPerson(file: TFile, person: string, replace?: string): Promise<void> {
+    const key = this.settings().fields.person;
+    const link = this.linkByName(person, file.path);
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+      const cur = fm[key];
+      let list = Array.isArray(cur) ? cur.map(String) : typeof cur === "string" && cur.trim() ? [cur] : [];
+      if (replace) list = list.filter((x) => linkList(x)[0]?.toLowerCase() !== replace.toLowerCase());
+      fm[key] = list;
+      if (linkList(list).some((x) => x.toLowerCase() === person.toLowerCase())) return;
+      fm[key] = [...list, link];
+    });
   }
 
   async rename(file: TFile, title: string): Promise<void> {
@@ -210,6 +228,7 @@ export class TaskStore {
       if (spec.tags?.length) fm[f.tags] = spec.tags;
       if (parent) fm[f.parent] = this.link(parent, path);
       if (spec.project) fm[f.project] = this.linkByName(spec.project, path);
+      if (spec.people?.length) fm[f.person] = spec.people.map((p) => this.linkByName(p, path));
       if (spec.dependsOn?.length) fm[f.dependsOn] = spec.dependsOn.map((d) => this.linkByName(d, path));
       if (spec.order != null) fm[f.order] = spec.order;
     });
@@ -243,6 +262,12 @@ export class TaskStore {
       else new Notice(`Next Up: template not found at ${kind.template}.`);
     }
     return this.app.vault.create(this.freePath(folder, base), fillPlaceholders(text, title, now));
+  }
+
+  /** A new note at `folder/base.md` (or `base 2.md`…), creating the folder if needed. */
+  async createFile(folder: string, base: string, text: string): Promise<TFile> {
+    await this.ensureFolder(folder);
+    return this.app.vault.create(this.freePath(folder, base), text);
   }
 
   /** `folder/base.md`, or `base 2.md`, `base 3.md`… when taken. */

@@ -49,6 +49,7 @@ One option per line; all filters must match.
 | `folder: Perso/Tasks` | tasks under this folder (`this` = the note's folder). **Also where new tasks are created** |
 | `project: this` | the note's name or `[[Project]]`, or `none` |
 | `parent: this` | subtasks of the current note (or `[[Task]]`, or `none` for top-level only) |
+| `person: this` | tasks about this person (or `[[Someone]]`, `any`, `none`) |
 | `text: invoice` | name contains |
 | `where: tags today or due overdue` | escape hatch with `or`, `and`, `not`, same filters without the colon |
 
@@ -85,6 +86,58 @@ A personal board, one block per column: `tags: this-week` + `max: 5`, `tags: fro
 - **Hover**: `+` adds a subtask right there; `⋯` (or right-click) opens Status, Due, Move to, Tags, Add subtask, Nest under, Un-nest, Move up/down, Depends on, Assign, Rename, Drop.
 - **Drag** by the grip: top/bottom edge of a row = put before/after (in `sort: order` blocks); middle = nest inside; anywhere in another block = move there. Moving removes the tags that put the task in the old block and adds what the new block fixes (its first tag, and `status`/`owner`/`project` if the block pins one). On touch screens, use *Move to…* and *Nest under…*.
 - **Add row**: Enter creates a task with the block's tags, owner, status, folder, project and parent, and keeps focus for the next one. Paste several lines (e.g. an old checklist) to create them all; indented lines become subtasks, `[x]` lines are created done.
+
+## People (CRM)
+
+Any note with `type: person` is a person. A `next-up-crm` block shows people as cards, with **when you were last in touch** and **when you plan to be next**, the one-line reminder of who they are, and their tasks.
+
+```yaml
+---
+type: person
+tags: [funder, vc]              # roles are plain tags
+summary: VC at XAnge, scouts formal methods   # "who is this again?"
+role: Investment manager
+org: "[[XAnge]]"
+contact: clementine@xange.vc    # email, phone or URL: becomes a button
+owner: Ada                      # who on the team follows them
+last_contact: 2026-09-20
+next_contact: 2026-10-05       # or `never`: no need to get back to them
+---
+```
+
+A task is about someone when it has `person: "[[Clementine]]"` (a list is fine). In a person note, a plain `next-up` block with `person: this` lists and creates their tasks.
+
+````markdown
+```next-up-crm
+title: To recall
+next: before +7d
+```
+````
+
+| filter | meaning |
+|---|---|
+| `tags: funder, advisor` | has one of these tags · `none` |
+| `next: before +7d` | next contact on or before · `after` · `on` · `overdue` · `soon` · `any` (a date) · `none` (nothing decided) · `never` (no need to recontact) |
+| `last: before -30d` | last contact · `after -7d` · `stale` (older than *Cold after*, or never; people with `next_contact: never` excluded) · `none` (never) |
+| `owner: me` | who follows them · names · `none` |
+| `folder: People` | people under this folder (`this` = the note's folder). **Also where new people are created** |
+| `text: xange` | name, summary, role or org contains |
+| *any other key* | a frontmatter property: `circle: advisor`, `segment: VC, Client`, `status: to-meet`, `city: none` |
+| `where: tags funder or segment vc` | `or`, `and`, `not`, as in next-up |
+
+| option | meaning |
+|---|---|
+| `title: Funders` | header with the count, and how many are late |
+| `sort: next` | default: next contact first (late on top, no date last) · `last` (coldest first) · `recent` · `name` |
+| `limit: 10` | at most 10 cards |
+| `tasks: open` | cards start unfolded · `hide`: no task list |
+| `add: false` | no add row |
+
+**Last contact** is the most recent of the `last_contact` field and the `date` of any note (meeting, interview) that links the person in `attendees`, `person` or `people` (*Contact fields* setting). Hover the chip to see which; click it to open that note.
+
+**Cards**: ✓✓ (*In touch today…*) sets `last_contact` to today, asks when to get back to them (1 week, 2 weeks, 1 month, 3 months, a date, *No date* or *Never*) and takes an optional one-line note, added as `- 2026-09-24 — note` under `## Log` in the person note (newest first). Click the alarm chip to change the next contact. *Never* (`next_contact: never`) is for people you don't need to chase: the chip goes quiet (“no recall”), they sink to the bottom of `sort: next`, and they leave `next: none` and `last: stale` views. The chevron unfolds the person's open tasks as a regular next-up list: add, check, nest, drag. Dropping a task from any block onto a person attaches it to them (it keeps its tags). `⋯` / right-click: Tags, Assign, Summary, Rename. The add row creates a person from the *Person template* with the block's tags, owner and properties.
+
+A few blocks make a CRM page: *To recall* (`next: before +7d`), *Gone cold* (`last: stale` + `next: none`), *Never contacted* (`last: none`), one per role (`tags: funder`), and *Everyone* (`sort: name`).
 
 ## Capture
 
@@ -133,11 +186,11 @@ seam for agent loops: progress reports, drift tracking, forgotten projects.
 
 ## Commands
 
-*Open home*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Move this task to…*, *Toggle a tag on this task*, *Convert “someday” tasks to todo*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
+*Open home*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Move this task to…*, *Toggle a tag on this task*, *Convert “someday” tasks to todo*, *In touch with this person today…*, *Next contact with this person…*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
 
 ## Settings
 
-Always visible: **I am**, **Home note**, **Default task folder**, **Board tags** (default `today, tomorrow, tonight, this-week, frog`), **Statuses**, **Done statuses**, **Team note**, **Task template**, **Capture kinds**. *Show advanced settings* reveals *Due soon* days, the todo/doing status names, field names and *Ask the vault*. Folds (which tasks are collapsed) are remembered per device.
+Always visible: **I am**, **Home note**, **Default task folder**, **Board tags** (default `today, tomorrow, tonight, this-week, frog`), **Statuses**, **Done statuses**, **Team note**, **Task template**, **Capture kinds**, **Default people folder**, **Person template**, **Cold after (days)**. *Show advanced settings* reveals *Due soon* days, the todo/doing status names, field names and *Ask the vault*. Folds (which tasks are collapsed) are remembered per device.
 
 ## Install
 

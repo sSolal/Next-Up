@@ -50,6 +50,11 @@ export class NextUpSettingTab extends PluginSettingTab {
         });
       });
 
+    new Setting(containerEl).setName("People").setDesc("For `next-up-crm` blocks: any note with `type: person` is a person.").setHeading();
+    this.text(containerEl, "Default people folder", "Where the add row of a `next-up-crm` block creates people when the block has no `folder:`.", s.peopleFolder, (v) => (s.peopleFolder = v));
+    this.text(containerEl, "Person template", "Note copied for new people (optional). Its frontmatter is kept; the block's tags and fields are added.", s.personTemplate, (v) => (s.personTemplate = v));
+    this.number(containerEl, "Cold after (days)", "A last contact older than this shows in orange (and matches `last: stale`).", s.staleDays, (v) => (s.staleDays = Math.max(1, Math.round(v))));
+
     new Setting(containerEl).setName("Show advanced settings").addToggle((t) =>
       t.setValue(this.showAdvanced).onChange((v) => {
         this.showAdvanced = v;
@@ -63,6 +68,9 @@ export class NextUpSettingTab extends PluginSettingTab {
     this.text(containerEl, "Todo status", "Status of new tasks, and of a task unchecked.", s.todoStatus, (v) => (s.todoStatus = v || "todo"));
     this.text(containerEl, "Doing status", "", s.doingStatus, (v) => (s.doingStatus = v || "doing"));
     this.text(containerEl, "Task type value", "Value of the `type` field that marks a task note.", s.taskType, (v) => (s.taskType = v || "task"));
+
+    this.text(containerEl, "Person type value", "Value of the `type` field that marks a person note.", s.personType, (v) => (s.personType = v || "person"));
+    this.text(containerEl, "Contact fields", "Comma-separated keys of dated notes (meetings, interviews) that link people. Such a note with a past `date` counts as a contact.", s.interactionFields.join(", "), (v) => (s.interactionFields = list(v)));
 
     new Setting(containerEl)
       .setName("Field names")

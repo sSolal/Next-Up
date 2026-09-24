@@ -18,6 +18,8 @@ export type Cond =
   | { k: "project"; project: string }
   /** a task name, `this` or `none` */
   | { k: "parent"; parent: string }
+  /** a person the task is about: a name, `this`, `any` or `none` */
+  | { k: "person"; person: string }
   | { k: "text"; text: string }
   | { k: "not"; c: Cond }
   | { k: "or"; alts: Cond[][] };
@@ -58,7 +60,7 @@ export interface Ctx {
 
 const TRUE = /^(true|yes|1|on)$/i;
 
-function splitList(v: string): string[] {
+export function splitList(v: string): string[] {
   return v.split(",").map((x) => x.trim()).filter(Boolean);
 }
 
@@ -117,6 +119,9 @@ export function parseCond(key: string, value: string): Cond | string {
       return { k: "project", project: lv === "this" || lv === "none" ? lv : linkBasename(v) ?? v };
     case "parent":
       return { k: "parent", parent: lv === "this" || lv === "none" ? lv : linkBasename(v) ?? v };
+    case "person":
+    case "people":
+      return { k: "person", person: ["this", "none", "any"].includes(lv) ? lv : linkBasename(v) ?? v };
     case "text":
     case "name":
       return { k: "text", text: lv };
@@ -124,11 +129,19 @@ export function parseCond(key: string, value: string): Cond | string {
   return `unknown filter “${key}”`;
 }
 
+/** A boolean combination of atoms: what `where:` parses, for any kind of condition. */
+export type Bool<C> = C | { k: "not"; c: Bool<C> } | { k: "or"; alts: Bool<C>[][] };
+
 /** `tags today or not due none and owner me`: `or` binds loosest, then `and`, then `not`. */
 export function parseWhere(expr: string): Cond | string {
-  const alts: Cond[][] = [];
+  return parseBool(expr, parseCond) as Cond | string;
+}
+
+/** `where:` grammar over the atoms of `atom(key, value)`. */
+export function parseBool<C>(expr: string, parseAtom: (key: string, value: string) => C | string): Bool<C> | string {
+  const alts: Bool<C>[][] = [];
   for (const alt of expr.split(/\s+or\s+/i)) {
-    const conj: Cond[] = [];
+    const conj: Bool<C>[] = [];
     for (let atom of alt.split(/\s+and\s+/i)) {
       atom = atom.trim();
       let neg = false;
@@ -139,7 +152,7 @@ export function parseWhere(expr: string): Cond | string {
       }
       const m = atom.match(/^([\w-]+)\s*:?\s*(.*)$/);
       if (!m) return `where: cannot read “${atom}”`;
-      const c = parseCond(m[1], m[2]);
+      const c = parseAtom(m[1], m[2]);
       if (typeof c === "string") return `where: ${c}`;
       conj.push(neg ? { k: "not", c } : c);
     }
@@ -333,6 +346,12 @@ export class Matcher {
         if (c.parent === "this") return p?.path === ctx.sourcePath;
         return !!p && p.name.toLowerCase() === c.parent.toLowerCase();
       }
+      case "person": {
+        if (c.person === "none") return !t.people.length;
+        if (c.person === "any") return t.people.length > 0;
+        const p = (c.person === "this" ? baseName(ctx.sourcePath) : c.person).toLowerCase();
+        return t.people.some((x) => x.toLowerCase() === p);
+      }
       case "text":
         return t.name.toLowerCase().includes(c.text);
       case "not":
@@ -432,6 +451,8 @@ export interface Prefill {
   parentPath?: string;
   /** basename of the parent (`parent: [[X]]`) */
   parentName?: string;
+  /** basename of a person the task is about */
+  person?: string;
 }
 
 /** Fields that make a new task show up in the block: from its single-valued, top-level conditions. */
@@ -463,6 +484,10 @@ export function prefill(q: Query, ctx: Ctx): Prefill {
         if (c.parent === "this") out.parentPath = ctx.sourcePath;
         else if (c.parent !== "none") out.parentName = c.parent;
         break;
+      case "person":
+        if (c.person === "this") out.person = baseName(ctx.sourcePath);
+        else if (c.person !== "none" && c.person !== "any") out.person = c.person;
+        break;
     }
   }
   return out;
@@ -474,6 +499,8 @@ export interface MovePatch {
   status?: string;
   owner?: string;
   project?: string;
+  person?: string;
+  removePerson?: string;
 }
 
 /** Moving a task from block `from` to block `to`: drop the tags that put it in `from`, take what `to` prefills. */
@@ -483,6 +510,12 @@ export function movePatch(from: Query | undefined, to: Query, ctx: Ctx): MovePat
   for (const c of from?.conds ?? []) if (c.k === "tags") for (const t of c.tags) remove.add(t);
   if (to.conds.some((c) => c.k === "notags")) for (const t of boardSet(ctx.settings)) remove.add(t);
   for (const t of pre.tags) remove.delete(t);
+  if (pre.person) {
+    // a person's list attaches the task to them: its board tags stay, the person it came from (if any) is swapped
+    const old = from ? prefill(from, ctx).person : undefined;
+    const swap = old && old.toLowerCase() !== pre.person.toLowerCase() ? { removePerson: old } : {};
+    return { addTags: pre.tags, removeTags: to.conds.some((c) => c.k === "tags" || c.k === "notags") ? [...remove] : [], status: pre.status, owner: pre.owner, project: pre.project, person: pre.person, ...swap };
+  }
   return { addTags: pre.tags, removeTags: [...remove], status: pre.status, owner: pre.owner, project: pre.project };
 }
 

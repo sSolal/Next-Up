@@ -3,7 +3,10 @@ import { DEFAULT_SETTINGS, type NextUpSettings, mergeSettings } from "./settings
 import { NextUpSettingTab } from "./settingsTab.ts";
 import { TaskStore } from "./store.ts";
 import { TodoBlock } from "./todoView.ts";
-import { CaptureModal, type CapturePreset, StringSuggestModal } from "./modals.ts";
+import { CrmBlock } from "./crmView.ts";
+import { PeopleStore } from "./peopleStore.ts";
+import { NEVER } from "./crm.ts";
+import { CaptureModal, type CapturePreset, ContactModal, StringSuggestModal } from "./modals.ts";
 import { captureKindsFor } from "./model.ts";
 import type { DragState } from "./listView.ts";
 import { KbService } from "./kb/service.ts";
@@ -14,6 +17,8 @@ import { AskPromptModal, DigestModal } from "./kb/digestModal.ts";
 export default class NextUpPlugin extends Plugin {
   settings: NextUpSettings = DEFAULT_SETTINGS;
   store!: TaskStore;
+  /** People for `next-up-crm` blocks. */
+  people!: PeopleStore;
   /** "Ask the vault": digest, tools and local model. Future agent loops call `kb.ask`. */
   kb!: KbService;
   /** The task being dragged between next-up blocks, if any. */
@@ -24,12 +29,14 @@ export default class NextUpPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
     this.store = new TaskStore(this.app, () => this.settings);
+    this.people = new PeopleStore(this.store);
     this.kb = new KbService(new ObsidianNoteSource(this.app, () => this.settings.kb), () => this.settings, requestUrlTransport);
     this.addSettingTab(new NextUpSettingTab(this.app, this));
 
     this.registerView(VIEW_TYPE_ASK, (leaf) => new AskVaultView(leaf, this));
     const invalidate = () => {
       this.store.invalidate();
+      this.people.invalidate();
       this.scheduleKbInvalidate();
     };
     this.registerEvent(this.app.metadataCache.on("changed", invalidate));
@@ -61,6 +68,9 @@ export default class NextUpPlugin extends Plugin {
 
     this.registerMarkdownCodeBlockProcessor("next-up", (source, el, ctx) => {
       ctx.addChild(new TodoBlock(this, el, source, ctx.sourcePath));
+    });
+    this.registerMarkdownCodeBlockProcessor("next-up-crm", (source, el, ctx) => {
+      ctx.addChild(new CrmBlock(this, el, source, ctx.sourcePath));
     });
 
     this.addRibbonIcon("list-checks", "Open home", () => this.openHome());
@@ -121,6 +131,20 @@ export default class NextUpPlugin extends Plugin {
       }),
     });
     this.addCommand({
+      id: "log-contact",
+      name: "In touch with this person today…",
+      checkCallback: (checking) => this.withActivePerson(checking, (f, name, next) =>
+        new ContactModal(this.app, name, next, true, (n, note) => void this.people.logContact(f, n, note)).open(),
+      ),
+    });
+    this.addCommand({
+      id: "set-next-contact",
+      name: "Next contact with this person…",
+      checkCallback: (checking) => this.withActivePerson(checking, (f, name, next) =>
+        new ContactModal(this.app, name, next, false, (n) => void this.people.setNext(f, n)).open(),
+      ),
+    });
+    this.addCommand({
       id: "convert-someday",
       name: "Convert “someday” tasks to todo (no tag = One day)",
       callback: async () => {
@@ -172,6 +196,14 @@ export default class NextUpPlugin extends Plugin {
     return true;
   }
 
+  private withActivePerson(checking: boolean, fn: (f: TFile, name: string, next: string | undefined) => void): boolean {
+    const f = this.app.workspace.getActiveFile();
+    const p = f instanceof TFile ? this.people.personData(f) : undefined;
+    if (!f || !p) return false;
+    if (!checking) fn(f, p.name, p.never ? NEVER : p.next);
+    return true;
+  }
+
   /** Capture dialog. Tasks default to me as owner and, from a task note, to its project. */
   openCapture(preset: CapturePreset = {}) {
     const kinds = captureKindsFor(this.settings.captureKinds, this.settings.tasksFolder);
@@ -204,6 +236,7 @@ export default class NextUpPlugin extends Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
     this.store?.invalidate();
+    this.people?.invalidate();
     this.kb?.invalidate();
     for (const cb of this.settingsListeners) cb();
   }

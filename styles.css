@@ -114,3 +114,28 @@ input.nu-add-input:focus { box-shadow: none; border: none; }
 .next-up-ask-answer { margin-top: 6px; }
 .next-up-ask-error { color: var(--color-red); white-space: pre-wrap; }
 .next-up-digest { max-height: 60vh; overflow: auto; white-space: pre-wrap; font-size: var(--font-ui-smaller); }
+
+/* people (next-up-crm) */
+.nu-person { align-items: flex-start; padding-left: 8px; }
+.nu-person .nu-fold { align-self: center; }
+.nu-avatar { flex: 0 0 34px; height: 34px; margin: 2px 4px 0 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8em; font-weight: 600; letter-spacing: 0.02em; color: var(--text-accent); background: rgba(var(--interactive-accent-rgb), 0.14); }
+.nu-person-main { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; }
+.nu-person-sub { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.nu-person-summary { font-size: var(--font-ui-small); color: var(--text-normal); opacity: 0.85; overflow-wrap: anywhere; }
+.nu-person .nu-chips { align-self: center; }
+.nu-person .nu-actions { align-self: center; }
+.nu-last.is-fresh { color: var(--color-green); background: rgba(var(--color-green-rgb), 0.12); }
+.nu-last.is-stale { color: var(--color-orange); background: rgba(var(--color-orange-rgb), 0.12); }
+.nu-last.is-never { color: var(--text-faint); }
+.nu-last.is-link { cursor: pointer; text-decoration: underline dotted; }
+.nu-next { cursor: pointer; }
+.nu-next.is-empty { color: var(--text-faint); background: transparent; border: 1px dashed var(--background-modifier-border); }
+.nu-next.is-overdue { color: var(--color-red); background: rgba(var(--color-red-rgb), 0.12); font-weight: 600; }
+.nu-next.is-due-soon { color: var(--color-orange); background: rgba(var(--color-orange-rgb), 0.12); }
+.nu-person-tasks-chip { cursor: pointer; max-width: 22em; overflow: hidden; text-overflow: ellipsis; }
+a.nu-contact { text-decoration: none; padding: 1px 5px; }
+a.nu-contact svg { width: 12px; height: 12px; }
+.nu-person-tasks { margin-left: 30px; }
+.nu-person-tasks .nu-rows { padding: 0; }
+.next-up-contact .next-up-segmented { margin: 4px 0 2px; }
+.nu-next.is-never { color: var(--text-faint); background: transparent; }

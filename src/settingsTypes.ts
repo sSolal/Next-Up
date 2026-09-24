@@ -10,6 +10,15 @@ export interface FieldNames {
   completed: string;
   tags: string;
   order: string;
+  /** on tasks: the people a task is about (links) */
+  person: string;
+  /** on people */
+  lastContact: string;
+  nextContact: string;
+  summary: string;
+  role: string;
+  org: string;
+  contact: string;
 }
 
 /** "Ask the vault": local model over a deterministic digest of the vault. */
@@ -73,6 +82,16 @@ export interface NextUpSettings {
   taskType: string;
   fields: FieldNames;
   kb: KbConfig;
+  /** Value of `type` that marks a note as a person (next-up-crm). */
+  personType: string;
+  /** Default folder for new people. */
+  peopleFolder: string;
+  /** Note copied for new people (frontmatter kept, then the block's fields added). */
+  personTemplate: string;
+  /** Last contact older than this many days shows as cold. */
+  staleDays: number;
+  /** Frontmatter keys of other notes (meetings, interviews) that link people; with the note's `date`, they count as a contact. */
+  interactionFields: string[];
   /** Per-device fold state of tasks with subtasks: path → collapsed. */
   fold: Record<string, boolean>;
 }
@@ -103,6 +122,13 @@ export const DEFAULT_FIELDS: FieldNames = {
   completed: "completed",
   tags: "tags",
   order: "order",
+  person: "person",
+  lastContact: "last_contact",
+  nextContact: "next_contact",
+  summary: "summary",
+  role: "role",
+  org: "org",
+  contact: "contact",
 };
 
 export const DEFAULT_SETTINGS: NextUpSettings = {
@@ -121,6 +147,11 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   taskType: "task",
   fields: { ...DEFAULT_FIELDS },
   kb: { ...DEFAULT_KB },
+  personType: "person",
+  peopleFolder: "People",
+  personTemplate: "",
+  staleDays: 30,
+  interactionFields: ["attendees", "person", "people"],
   fold: {},
 };
 
@@ -141,6 +172,7 @@ export function mergeSettings(raw: unknown): NextUpSettings {
     boardTags: Array.isArray(data.boardTags) ? data.boardTags : [...DEFAULT_SETTINGS.boardTags],
     statuses: Array.isArray(data.statuses) ? data.statuses : [...DEFAULT_SETTINGS.statuses],
     doneStatuses: Array.isArray(data.doneStatuses) ? data.doneStatuses : [...DEFAULT_SETTINGS.doneStatuses],
+    interactionFields: Array.isArray(data.interactionFields) ? data.interactionFields : [...DEFAULT_SETTINGS.interactionFields],
     fields,
     kb: { ...DEFAULT_KB, ...(data.kb ?? {}) },
     fold: data.fold && typeof data.fold === "object" ? data.fold : {},

@@ -32,6 +32,7 @@ export function mk(name: string, extra: Partial<TaskData> = {}): TaskData {
     name,
     status: "todo",
     dependsOn: [],
+    people: [],
     tags: [],
     mtime: Date.UTC(2026, 8, 1),
     ...extra,

@@ -221,3 +221,23 @@ test("due display", () => {
   assert.equal(dueLabel("2026-10-05", "2026-09-24"), "5 Oct");
   assert.equal(dueLabel("2027-01-05", "2026-09-24"), "5 Jan 2027");
 });
+
+test("person filter and prefill", () => {
+  const tasks = [mk("Send deck", { people: ["Clementine"] }), mk("Call", { people: ["Antoine", "Clementine"] }), mk("Alone")];
+  assert.deepEqual(run("person: [[Clementine]]", tasks).matched, ["Send deck", "Call"]);
+  assert.deepEqual(run("person: none", tasks).matched, ["Alone"]);
+  assert.deepEqual(run("person: any", tasks).matched, ["Send deck", "Call"]);
+  const inNote: Ctx = { ...ctx, sourcePath: "People/Antoine.md" };
+  assert.deepEqual(run("person: this", tasks, inNote).matched, ["Call"]);
+  assert.equal(prefill(parseQuery("person: this"), inNote).person, "Antoine");
+  assert.equal(prefill(parseQuery("person: [[Clementine]]"), ctx).person, "Clementine");
+  assert.equal(prefill(parseQuery("person: none"), ctx).person, undefined);
+  assert.equal(movePatch(parseQuery("tags: today"), parseQuery("person: [[Clementine]]"), ctx).person, "Clementine");
+});
+
+test("movePatch to a person's list: attach, keep tags, swap people", () => {
+  const toC = parseQuery("person: [[Clementine]]");
+  assert.deepEqual(movePatch(parseQuery("tags: today"), toC, ctx).removeTags, []);
+  assert.equal(movePatch(parseQuery("person: [[Antoine]]"), toC, ctx).removePerson, "Antoine");
+  assert.equal(movePatch(parseQuery("person: [[clementine]]"), toC, ctx).removePerson, undefined);
+});

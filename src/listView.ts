@@ -1,6 +1,5 @@
 import { Menu, Notice, TFile, setIcon } from "obsidian";
 import type NextUpPlugin from "./main.ts";
-import type { TodoBlock } from "./todoView.ts";
 import { type TaskData, type TaskIndex, ancestors, childrenOf, descendants, isBlocked, blockers, isDone, parentOf } from "./model.ts";
 import {
   type Ctx,
@@ -19,6 +18,17 @@ import {
   prefill,
 } from "./query.ts";
 import { DateModal, StringSuggestModal, TaskSuggestModal, TextModal } from "./modals.ts";
+
+/** What a list renders into: a `next-up` block, or a person card of a `next-up-crm` block. */
+export interface ListHost {
+  plugin: NextUpPlugin;
+  /** tells lists apart when a task is dragged from one to another */
+  id: string;
+  containerEl: HTMLElement;
+  ctx(): Ctx;
+  /** re-render the whole host */
+  render(): void;
+}
 
 /** A task being dragged, shared by every block of every open note. */
 export interface DragState {
@@ -39,7 +49,7 @@ interface OpenInput {
 
 /** The `list` view of a next-up block: a filtered, nested, reorderable task list. */
 export class ListView {
-  private block: TodoBlock;
+  private block: ListHost;
   private plugin: NextUpPlugin;
   private q: Query;
   private ctx!: Ctx;
@@ -51,7 +61,7 @@ export class ListView {
   private input: OpenInput = { parentPath: "", value: "", focused: false };
   private rendering = false;
 
-  constructor(block: TodoBlock, q: Query) {
+  constructor(block: ListHost, q: Query) {
     this.block = block;
     this.plugin = block.plugin;
     this.q = q;
@@ -101,7 +111,7 @@ export class ListView {
     if (q.add) this.renderInput(list, "", 0);
   }
 
-  /** Dropping on the block but not on a row: move here, last. Wired once per block by the TodoBlock. */
+  /** Dropping on the block but not on a row: move here, last. Wired once per host. */
   static wireBlockDrop(el: HTMLElement, plugin: NextUpPlugin, view: () => ListView | null) {
     el.addEventListener("dragover", (ev) => {
       if (!plugin.drag || !view()) return;
@@ -338,6 +348,7 @@ export class ListView {
           status: item.done ? (s.doneStatuses[0] ?? "done") : pre.status,
           owner: pre.owner ?? parent?.owner,
           project: pre.project ?? parent?.project,
+          people: pre.person ? [pre.person] : parent?.people,
           parentPath: under,
           order: o,
         });

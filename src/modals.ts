@@ -1,5 +1,7 @@
 import { App, Modal, Notice, Setting, SuggestModal } from "obsidian";
-import { type ResolvedKind, type TaskData } from "./model.ts";
+import { type ResolvedKind, type TaskData, isoDate } from "./model.ts";
+import { resolveDate } from "./query.ts";
+import { NEVER, RECALL_PRESETS } from "./crm.ts";
 import type { TaskStore } from "./store.ts";
 
 /** Pick one task by name. */
@@ -243,6 +245,90 @@ export class TextModal extends Modal {
     });
     setTimeout(() => input.select(), 0);
     new Setting(contentEl).addButton((b) => b.setButtonText("OK").setCta().onClick(submit));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Next contact with a person: presets (+1w, +2w, +1m, +3m), a date, no date yet, or never
+ * (`next_contact: never`: no need to get back to them proactively).
+ * With `log`, also a one-line note, and the dates are only written on submit (Enter or Log).
+ */
+export class ContactModal extends Modal {
+  private name: string;
+  private log: boolean;
+  private onSubmit: (next: string | undefined, note: string) => void;
+  private next: string | undefined;
+  private note = "";
+  private btns: { el: HTMLButtonElement; date: string | undefined }[] = [];
+  private dateInput!: HTMLInputElement;
+
+  constructor(app: App, name: string, current: string | undefined, log: boolean, onSubmit: (next: string | undefined, note: string) => void) {
+    super(app);
+    this.name = name;
+    this.log = log;
+    this.onSubmit = onSubmit;
+    const today = isoDate(new Date());
+    // after a contact, a planned date already past is replaced by the default recall
+    this.next = log ? (current === NEVER || (current && current > today) ? current : resolveDate("+2w", today)) : current;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("next-up-modal", "next-up-contact");
+    this.titleEl.setText(this.log ? `In touch with ${this.name} today` : `Next contact with ${this.name}`);
+    const today = isoDate(new Date());
+
+    if (this.log) {
+      const input = contentEl.createEl("input", { type: "text", cls: "next-up-capture-title", attr: { placeholder: "What was said? (optional, added under ## Log)" } });
+      input.addEventListener("input", () => (this.note = input.value));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.isComposing) {
+          e.preventDefault();
+          this.submit();
+        }
+      });
+      setTimeout(() => input.focus(), 0);
+    }
+
+    contentEl.createDiv({ cls: "next-up-muted next-up-small", text: "Next contact" });
+    const row = contentEl.createDiv({ cls: "next-up-segmented" });
+    const choices: { label: string; date: string | undefined }[] = [
+      ...RECALL_PRESETS.map((p) => ({ label: p.label, date: resolveDate(p.expr, today) })),
+      { label: "No date", date: undefined },
+      { label: "Never", date: NEVER },
+    ];
+    this.btns = choices.map((c) => {
+      const title = c.date === NEVER ? "no need to get back to them" : c.date ?? "decide later";
+      const el = row.createEl("button", { cls: "next-up-seg", text: c.label, attr: { title } });
+      el.addEventListener("click", () => {
+        this.pick(c.date);
+        if (!this.log) this.submit();
+      });
+      return { el, date: c.date };
+    });
+    new Setting(contentEl).setName("Or on").addText((t) => {
+      this.dateInput = t.inputEl;
+      t.inputEl.type = "date";
+      t.onChange((v) => this.pick(v || undefined, false));
+    });
+    new Setting(contentEl).addButton((b) => b.setButtonText(this.log ? "Log" : "Set").setCta().onClick(() => this.submit()));
+    this.pick(this.next);
+  }
+
+  private pick(date: string | undefined, syncInput = true) {
+    this.next = date;
+    for (const b of this.btns) b.el.toggleClass("is-active", b.date === date);
+    if (syncInput && this.dateInput) this.dateInput.value = date && date !== NEVER ? date : "";
+  }
+
+  private submit() {
+    this.close();
+    this.onSubmit(this.next, this.note);
   }
 
   onClose() {
