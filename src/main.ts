@@ -4,6 +4,7 @@ import { NextUpSettingTab } from "./settingsTab.ts";
 import { TaskStore } from "./store.ts";
 import { TodoBlock } from "./todoView.ts";
 import { CrmBlock } from "./crmView.ts";
+import { InboxBlock } from "./inboxView.ts";
 import { PeopleStore } from "./peopleStore.ts";
 import { NEVER } from "./crm.ts";
 import { CaptureModal, type CapturePreset, ContactModal, StringSuggestModal } from "./modals.ts";
@@ -71,6 +72,9 @@ export default class NextUpPlugin extends Plugin {
     });
     this.registerMarkdownCodeBlockProcessor("next-up-crm", (source, el, ctx) => {
       ctx.addChild(new CrmBlock(this, el, source, ctx.sourcePath));
+    });
+    this.registerMarkdownCodeBlockProcessor("next-up-inbox", (source, el, ctx) => {
+      ctx.addChild(new InboxBlock(this, el, source, ctx.sourcePath));
     });
 
     this.addRibbonIcon("list-checks", "Open home", () => this.openHome());

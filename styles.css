@@ -139,3 +139,12 @@ a.nu-contact svg { width: 12px; height: 12px; }
 .nu-person-tasks .nu-rows { padding: 0; }
 .next-up-contact .next-up-segmented { margin: 4px 0 2px; }
 .nu-next.is-never { color: var(--text-faint); background: transparent; }
+
+/* inbox: loose checkboxes, grouped by note */
+.nu-inbox-note { display: flex; flex-direction: column; gap: 6px; }
+.nu-inbox-source { display: flex; align-items: center; gap: 5px; font-size: var(--font-ui-small); color: var(--text-muted); padding: 4px 4px 0; }
+.nu-inbox-source .nu-link { color: var(--text-muted); }
+.nu-inbox-source .nu-chip-icon svg { width: 14px; height: 14px; }
+.nu-inbox-item { min-height: 40px; padding-left: 10px; }
+.nu-inbox-item.is-nested { margin-left: 22px; }
+.nu-inbox-item .nu-name { cursor: pointer; font-weight: 400; }

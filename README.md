@@ -99,6 +99,28 @@ A personal board, one block per column: `tags: this-week` + `max: 5`, `tags: fro
 - **Drag** by the grip: top/bottom edge of a row = put before/after (in `sort: order` blocks); middle = nest inside; anywhere in another block = move there. Moving removes the tags that put the task in the old block and adds what the new block fixes (its first tag, and `status`/`owner`/`project` if the block pins one). On touch screens, use *Move to…* and *Nest under…*.
 - **Add row**: Enter creates a task with the block's tags, owner, status, folder, project and parent, and keeps focus for the next one. Paste several lines (e.g. an old checklist) to create them all; indented lines become subtasks, `[x]` lines are created done.
 
+## Inbox
+
+Jot `- [ ] ...` checkboxes in any note during a call; a `next-up-inbox` block gathers them so they get sorted.
+
+````markdown
+```next-up-inbox
+title: To sort
+folder: Calls
+```
+````
+
+Items are grouped by note, most recently edited first. **Checkbox**: checks it in the note. **Text**: opens the note at that line. **→** (on hover): *Make it a task*: a task named after the item is created (owner = you, `project` of the note if it has one), and the line becomes `- [[The task]]`, so it leaves the inbox and the note links to the task. Task notes, person notes, templates and the block's own note are left out.
+
+| option | meaning |
+|---|---|
+| `folder: Calls` | notes under this folder (`this` = the note's folder); default: the whole vault |
+| `done: hide` | leave checked items out (default `show`, struck through) |
+| `sort: name` | notes by name (default `recent`) |
+| `limit: 5` | at most 5 notes |
+| `text: deck` | item contains |
+| `to: Work/Tasks` | where *Make it a task* creates tasks (default: the default task folder) |
+
 ## People (CRM)
 
 Any note with `type: person` is a person. A `next-up-crm` block shows people as cards, with **when you were last in touch** and **when you plan to be next**, the one-line reminder of who they are, and their tasks.
