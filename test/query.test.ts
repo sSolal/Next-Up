@@ -111,6 +111,24 @@ test("due filters", () => {
   assert.deepEqual(run("due: any\nsort: due", tasks).tree.map((n) => n.task.name), ["Late", "Soon", "Later"]);
 });
 
+test("completed filters: done tasks shown without status: done", () => {
+  const tasks = [
+    mk("Open"),
+    mk("DoneToday", { status: "done", completed: "2026-09-24" }),
+    mk("DoneMonday", { status: "done", completed: "2026-09-21" }),
+    mk("DoneLastMonth", { status: "done", completed: "2026-08-30" }),
+    mk("Dropped", { status: "dropped", completed: "2026-09-22" }),
+    mk("DoneUndated", { status: "done" }),
+  ];
+  assert.deepEqual(run("completed: after -7d", tasks).matched, ["DoneToday", "DoneMonday", "Dropped"]);
+  assert.deepEqual(run("completed: after -7d\nstatus: dropped", tasks).matched, ["Dropped"]);
+  assert.deepEqual(run("completed: today", tasks).matched, ["DoneToday"]);
+  assert.deepEqual(run("completed: before 2026-09-01", tasks).matched, ["DoneLastMonth"]);
+  assert.deepEqual(run("completed: none\nstatus: done", tasks).matched, ["DoneUndated"]);
+  assert.deepEqual(run("where: completed after -7d and not status dropped", tasks).matched, ["DoneToday", "DoneMonday"]);
+  assert.match(parseQuery("completed: whenever").errors[0], /completed: cannot read the date/);
+});
+
 test("owner, folder, project, parent, text", () => {
   const tasks = [
     mk("Mine", { owner: "alice", path: "Perso/Mine.md" }),

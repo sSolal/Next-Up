@@ -10,6 +10,8 @@ export type Cond =
   | { k: "notags" }
   | { k: "status"; mode: "open" | "done" | "any" | "list"; list: string[] }
   | { k: "due"; op: "overdue" | "soon" | "before" | "after" | "on" | "any" | "none"; date?: string }
+  /** finished tasks by completion date: done tasks are shown without `status: done` */
+  | { k: "completed"; op: "before" | "after" | "on" | "any" | "none"; date?: string }
   /** names, `me` or `none` */
   | { k: "owner"; names: string[] }
   /** a folder, or `this` (the folder of the note holding the block) */
@@ -84,6 +86,22 @@ export function resolveDate(expr: string, today: string): string | undefined {
   return undefined;
 }
 
+/** `before +3d`, `after 2026-10-01`, `on today`, `<= -1w`, or a bare date (= on). */
+function parseDateOp(key: string, v: string): { op: "before" | "after" | "on"; date: string } | string {
+  const m = v.toLowerCase().match(/^(before|after|on|<=|>=|<|>|=)?\s*(.+)$/);
+  if (!m) return `${key}: cannot read “${v}”`;
+  const op = ({ "<=": "before", "<": "before", ">=": "after", ">": "after", "=": "on" } as Record<string, string>)[m[1] ?? ""] ?? m[1] ?? "on";
+  if (!resolveDate(m[2], "2000-01-01")) return `${key}: cannot read the date “${m[2]}” (use today, +3d, -1w, 2026-10-01)`;
+  return { op: op as "before" | "after" | "on", date: m[2] };
+}
+
+/** `d` against `op date` (relative dates resolved from `today`). */
+function dateMatches(d: string | undefined, op: "before" | "after" | "on", date: string | undefined, today: string): boolean {
+  const ref = resolveDate(date ?? "", today);
+  if (!d || !ref) return false;
+  return op === "before" ? d <= ref : op === "after" ? d >= ref : d === ref;
+}
+
 /** One condition from `key: value`. Returns an error message for unknown keys or values. */
 export function parseCond(key: string, value: string): Cond | string {
   const k = key.toLowerCase();
@@ -104,11 +122,13 @@ export function parseCond(key: string, value: string): Cond | string {
       if (["overdue", "late"].includes(lv)) return { k: "due", op: "overdue" };
       if (lv === "soon") return { k: "due", op: "soon" };
       if (lv === "any" || lv === "none") return { k: "due", op: lv };
-      const m = lv.match(/^(before|after|on|<=|>=|<|>|=)?\s*(.+)$/);
-      if (!m) return `due: cannot read “${v}”`;
-      const op = ({ "<=": "before", "<": "before", ">=": "after", ">": "after", "=": "on" } as Record<string, string>)[m[1] ?? ""] ?? m[1] ?? "on";
-      if (!resolveDate(m[2], "2000-01-01")) return `due: cannot read the date “${m[2]}” (use today, +3d, -1w, 2026-10-01)`;
-      return { k: "due", op: op as "before" | "after" | "on", date: m[2] };
+      const d = parseDateOp("due", v);
+      return typeof d === "string" ? d : { k: "due", ...d };
+    }
+    case "completed": {
+      if (lv === "any" || lv === "none") return { k: "completed", op: lv };
+      const d = parseDateOp("completed", v);
+      return typeof d === "string" ? d : { k: "completed", ...d };
     }
     case "owner":
       return { k: "owner", names: splitList(v) };
@@ -281,7 +301,7 @@ export class Matcher {
         if (!this.openOrRecent(t, q)) return false;
         continue;
       }
-      if (c.k === "status") status = true;
+      if (c.k === "status" || mentionsCompleted(c)) status = true;
       if (!this.cond(c, t)) return false;
     }
     return status || this.openOrRecent(t, q);
@@ -320,9 +340,13 @@ export class Matcher {
           case "soon":
             return !!d && d <= addDays(ctx.today, s.dueSoonDays);
         }
-        const ref = resolveDate(c.date ?? "", ctx.today);
-        if (!d || !ref) return false;
-        return c.op === "before" ? d <= ref : c.op === "after" ? d >= ref : d === ref;
+        return dateMatches(d, c.op, c.date, ctx.today);
+      }
+      case "completed": {
+        if (!isDone(t, s)) return c.op === "none";
+        if (c.op === "any") return !!t.completed;
+        if (c.op === "none") return !t.completed;
+        return dateMatches(t.completed, c.op, c.date, ctx.today);
       }
       case "owner":
         return c.names.some((n) => {
@@ -360,6 +384,14 @@ export class Matcher {
         return c.alts.some((conj) => conj.every((x) => this.cond(x, t)));
     }
   }
+}
+
+/** A `completed` filter anywhere (also inside `where:`) is about done tasks: the default open filter steps aside. */
+function mentionsCompleted(c: Cond): boolean {
+  if (c.k === "completed") return true;
+  if (c.k === "not") return mentionsCompleted(c.c);
+  if (c.k === "or") return c.alts.some((conj) => conj.some(mentionsCompleted));
+  return false;
 }
 
 export function folderOf(path: string): string {

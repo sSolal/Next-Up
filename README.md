@@ -45,6 +45,7 @@ One option per line; all filters must match.
 | `tags: none` | no board tag, on itself or its parents: *One day* |
 | `status: open` | default: not done/dropped (plus tasks finished today, see `done`). Also `doing`, `review, doing`, `done`, `any` |
 | `due: before +3d` | due on or before a date · `after 2026-10-01` · `on today` · `overdue` · `soon` · `any` · `none`. Dates: `today`, `tomorrow`, `+3d`, `-1w`, `+1m`, `2026-10-01` |
+| `completed: after -7d` | finished on or after a date (here: the last 7 days) · `before` · `on today` · `any` · `none`. Shows finished tasks (dropped ones too) without needing `done: show` |
 | `owner: me` | the *I am* setting; or names, or `none` |
 | `folder: Perso/Tasks` | tasks under this folder (`this` = the note's folder). **Also where new tasks are created** |
 | `project: this` | the note's name or `[[Project]]`, or `none` |
@@ -75,6 +76,17 @@ A dashboard block for what is late or about to be:
 title: Late & due soon
 due: before +3d
 sort: due
+```
+````
+
+What got done in the last 7 days:
+
+````markdown
+```next-up
+title: Done this week
+completed: after -7d
+where: not status dropped
+add: false
 ```
 ````
 
