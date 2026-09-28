@@ -462,11 +462,12 @@ export function buildTree(matched: TaskData[], idx: TaskIndex, q: Query, s: Next
   return q.limit ? roots.slice(0, q.limit) : roots;
 }
 
-export function countNodes(nodes: TreeNode[], s: NextUpSettings, openOnly = true): number {
+/** Open (or all) tasks in the tree; `deep: false` counts the top-level rows only, as `max:` does. */
+export function countNodes(nodes: TreeNode[], s: NextUpSettings, openOnly = true, deep = true): number {
   let n = 0;
   for (const x of nodes) {
     if (!openOnly || !isDone(x.task, s)) n++;
-    n += countNodes(x.children, s, openOnly);
+    if (deep) n += countNodes(x.children, s, openOnly);
   }
   return n;
 }

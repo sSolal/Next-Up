@@ -6,6 +6,7 @@ import {
   type Ctx,
   Matcher,
   buildTree,
+  countNodes,
   movePatch,
   parseOutline,
   parseQuery,
@@ -173,6 +174,8 @@ test("tree: nesting under the nearest shown ancestor, breadcrumbs, progress, ord
   assert.deepEqual(root.progress, { done: 1, total: 3 });
   assert.deepEqual(tree[0].crumbs.map((t) => t.name), ["Hidden parent"]);
   assert.equal(run("tags: today\nlimit: 2", tasks).tree.length, 2);
+  assert.equal(countNodes(tree, S), 6, "open tasks, subtasks included");
+  assert.equal(countNodes(tree, S, true, false), 3, "top-level rows only, for max:");
 });
 
 test("prefill: what makes a new task show up in the block", () => {

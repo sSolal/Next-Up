@@ -56,8 +56,8 @@ One option per line; all filters must match.
 
 | option | meaning |
 |---|---|
-| `title: To day` | header with the number of open tasks |
-| `max: 5` | the count turns red above 5 (a WIP limit, nothing is hidden) |
+| `title: To day` | header with the number of open tasks (top-level only when `max:` is set) |
+| `max: 5` | the count turns red above 5 top-level tasks (a WIP limit: subtasks are not counted, nothing is hidden) |
 | `limit: 10` | show at most 10 top-level rows |
 | `sort: order` | default: your manual order, then due date. Also `due`, `name`, `status` |
 | `done: today` | default: tasks finished today stay visible, struck through · `show` · `hide` |

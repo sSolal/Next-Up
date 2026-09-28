@@ -100,7 +100,7 @@ export class ListView {
     if (q.title || q.max) {
       const head = el.createDiv({ cls: "nu-head" });
       if (q.title) head.createSpan({ cls: "nu-title", text: q.title });
-      const n = countNodes(this.roots, this.s);
+      const n = countNodes(this.roots, this.s, true, !q.max);
       const count = head.createSpan({ cls: "nu-count", text: q.max ? `${n}/${q.max}` : String(n) });
       if (q.max && n > q.max) count.addClass("is-over");
     }
