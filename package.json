@@ -1,6 +1,6 @@
 {
   "name": "next-up",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Obsidian plugin: tasks as notes, shown in filtered, nested, drag-and-drop lists.",
   "main": "main.js",
   "type": "module",
@@ -11,7 +11,12 @@
     "kb": "node src/kb/cli.ts",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
-  "keywords": ["obsidian", "obsidian-plugin", "tasks", "productivity"],
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "tasks",
+    "productivity"
+  ],
   "author": "Solal Stern",
   "license": "MIT",
   "devDependencies": {
