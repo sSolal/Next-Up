@@ -2,7 +2,8 @@ import { App, Modal, Notice, Setting, SuggestModal } from "obsidian";
 import { type ResolvedKind, type TaskData, isoDate } from "./model.ts";
 import { resolveDate } from "./query.ts";
 import { NEVER, RECALL_PRESETS } from "./crm.ts";
-import type { TaskStore } from "./store.ts";
+import type { NewTaskSpec, TaskStore } from "./store.ts";
+import { ESTIMATE_PRESETS, formatDuration, parseDuration, splitEstimate } from "./duration.ts";
 
 /** Pick one task by name. */
 export class TaskSuggestModal extends SuggestModal<TaskData> {
@@ -112,7 +113,7 @@ export class CaptureModal extends Modal {
     }
     if (this.preset.parentPath) contentEl.createDiv({ cls: "next-up-muted", text: `Subtask of ${this.preset.parentPath.replace(/\.md$/, "").split("/").pop()}` });
 
-    const input = contentEl.createEl("input", { type: "text", cls: "next-up-capture-title", attr: { placeholder: "Title" } });
+    const input = contentEl.createEl("input", { type: "text", cls: "next-up-capture-title", attr: { placeholder: "Title (end with 30m or 1h to estimate a task)" } });
     input.addEventListener("input", () => (this.title = input.value));
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.isComposing) {
@@ -168,7 +169,8 @@ export class CaptureModal extends Modal {
     const kind = this.kinds[this.kind];
     this.close();
     if (kind.isTask) {
-      const file = await this.store.createTask({ title, owner: this.preset.owner || undefined, parentPath: this.preset.parentPath, project: this.project, due: this.due });
+      const typed = splitEstimate(title);
+      const file = await this.store.createTask({ title: typed.title, estimate: typed.estimate, owner: this.preset.owner || undefined, parentPath: this.preset.parentPath, project: this.project, due: this.due });
       new Notice(`Created ${file.basename}`);
     } else {
       const file = await this.store.createNote(kind, title);
@@ -329,6 +331,259 @@ export class ContactModal extends Modal {
   private submit() {
     this.close();
     this.onSubmit(this.next, this.note);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/** A row of buttons; `onPick` gets the value. Returns the buttons, to mark the active one. */
+function segmented<T>(el: HTMLElement, choices: { label: string; value: T; title?: string }[], onPick: (v: T) => void) {
+  const row = el.createDiv({ cls: "next-up-segmented" });
+  return choices.map((c) => {
+    const b = row.createEl("button", { cls: "next-up-seg", text: c.label, attr: c.title ? { title: c.title } : {} });
+    b.addEventListener("click", () => onPick(c.value));
+    return { el: b, value: c.value };
+  });
+}
+
+/** How long a task should take: a preset, or typed (`45m`, `1h30`, `2h`). */
+export class EstimateModal extends Modal {
+  private heading: string;
+  private current?: number;
+  private onPick: (minutes: number | undefined) => void;
+
+  constructor(app: App, heading: string, current: number | undefined, onPick: (minutes: number | undefined) => void) {
+    super(app);
+    this.heading = heading;
+    this.current = current;
+    this.onPick = onPick;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("next-up-modal");
+    this.titleEl.setText(this.heading);
+    const pick = (m: number | undefined) => {
+      this.close();
+      this.onPick(m);
+    };
+    const btns = segmented(contentEl, ESTIMATE_PRESETS.map((p) => ({ label: p, value: parseDuration(p)! })), pick);
+    for (const b of btns) b.el.toggleClass("is-active", b.value === this.current);
+    const input = contentEl.createEl("input", { type: "text", cls: "next-up-capture-title", attr: { placeholder: "or type: 45m, 1h30, 3h… (Enter)" } });
+    if (this.current != null) input.value = formatDuration(this.current);
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      const m = parseDuration(input.value);
+      if (input.value.trim() && m == null) return void new Notice("Write it like 45m, 1h30 or 2h.");
+      pick(m);
+    });
+    setTimeout(() => input.select(), 0);
+    new Setting(contentEl).addButton((b) => b.setButtonText("No estimate").onClick(() => pick(undefined)));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/** Asked when a task is checked: how long it took, to compare with the estimate. Skipping is fine. */
+export class SpentModal extends Modal {
+  private name: string;
+  private estimate: number;
+  private onPick: (minutes: number) => void;
+
+  constructor(app: App, name: string, estimate: number, onPick: (minutes: number) => void) {
+    super(app);
+    this.name = name;
+    this.estimate = estimate;
+    this.onPick = onPick;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("next-up-modal");
+    this.titleEl.setText(`✓ ${this.name}: how long did it take?`);
+    const e = this.estimate;
+    const pick = (m: number) => {
+      this.close();
+      this.onPick(m);
+    };
+    const round = (m: number) => Math.max(5, Math.round(m / 5) * 5);
+    segmented(contentEl, [
+      { label: `As planned (${formatDuration(e)})`, value: e },
+      { label: `Less (${formatDuration(round(e / 2))})`, value: round(e / 2) },
+      { label: `More (${formatDuration(round(e * 1.5))})`, value: round(e * 1.5) },
+      { label: `Twice (${formatDuration(round(e * 2))})`, value: round(e * 2) },
+    ], pick);
+    const input = contentEl.createEl("input", { type: "text", cls: "next-up-capture-title", attr: { placeholder: "or type it: 50m, 2h15… (Enter)" } });
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" || ev.isComposing) return;
+      ev.preventDefault();
+      const m = parseDuration(input.value);
+      if (m != null) pick(m);
+    });
+    new Setting(contentEl).addButton((b) => b.setButtonText("Skip").onClick(() => this.close()));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/** Focused hours available on a day; `undefined` goes back to the default. */
+export class CapacityModal extends Modal {
+  private label: string;
+  private current: number;
+  private onPick: (hours: number | undefined) => void;
+
+  constructor(app: App, label: string, current: number, onPick: (hours: number | undefined) => void) {
+    super(app);
+    this.label = label;
+    this.current = current;
+    this.onPick = onPick;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("next-up-modal");
+    this.titleEl.setText(`Hours to work ${this.label}`);
+    const pick = (h: number | undefined) => {
+      this.close();
+      this.onPick(h);
+    };
+    const btns = segmented(contentEl, [0, 2, 3, 4, 5, 6, 7, 8].map((h) => ({ label: `${h}h`, value: h })), pick);
+    for (const b of btns) b.el.toggleClass("is-active", b.value === this.current);
+    new Setting(contentEl).addButton((b) => b.setButtonText("Back to the default").onClick(() => pick(undefined)));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+export type TriageResult = { action: "task" | "idea"; spec: NewTaskSpec } | { action: "dismiss" };
+
+/** Remembered between triages: most items in a row belong together. */
+const lastTriage: { project?: string; context?: string } = {};
+
+/**
+ * One inbox item, sorted in one go: a task (project, context, estimate, day, owner), an idea for later,
+ * or dismissed. Enter makes the task.
+ */
+export class TriageModal extends Modal {
+  private store: TaskStore;
+  private me: string;
+  private onDone: (r: TriageResult) => void;
+  private spec: NewTaskSpec;
+  private today = isoDate(new Date());
+
+  constructor(app: App, store: TaskStore, text: string, defaults: { project?: string; owner?: string }, onDone: (r: TriageResult) => void) {
+    super(app);
+    this.store = store;
+    this.me = defaults.owner ?? "";
+    this.onDone = onDone;
+    const project = defaults.project ?? lastTriage.project;
+    this.spec = { title: text, project, context: project ? store.loadGroups().projects.get(project.toLowerCase())?.context ?? lastTriage.context : lastTriage.context, owner: defaults.owner || undefined };
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("next-up-modal", "next-up-triage");
+    this.titleEl.setText("Sort this");
+    const title = contentEl.createEl("input", { type: "text", cls: "next-up-capture-title", value: this.spec.title });
+    title.addEventListener("input", () => (this.spec.title = title.value));
+    setTimeout(() => title.select(), 0);
+    contentEl.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing || (e.target as HTMLElement).tagName === "SELECT") return;
+      if ((e.target as HTMLElement).hasClass?.("next-up-triage-est")) return;
+      e.preventDefault();
+      this.finish("task");
+    });
+
+    let ctxDrop: { setValue(v: string): unknown } | undefined;
+    new Setting(contentEl).setName("Project").addDropdown((d) => {
+      const list = this.store.projects();
+      if (this.spec.project && !list.includes(this.spec.project)) list.unshift(this.spec.project);
+      d.addOption("", "— none —");
+      for (const p of list) d.addOption(p, p);
+      d.setValue(this.spec.project ?? "");
+      d.onChange((v) => {
+        this.spec.project = v || undefined;
+        const c = v ? this.store.loadGroups().projects.get(v.toLowerCase())?.context : undefined;
+        if (c) {
+          this.spec.context = c;
+          ctxDrop?.setValue(c);
+        }
+      });
+    });
+    new Setting(contentEl).setName("Context").addDropdown((d) => {
+      ctxDrop = d;
+      const list = this.store.contexts();
+      if (this.spec.context && !list.includes(this.spec.context)) list.unshift(this.spec.context);
+      d.addOption("", "— none —");
+      for (const c of list) d.addOption(c, c);
+      d.setValue(this.spec.context ?? "");
+      d.onChange((v) => (this.spec.context = v || undefined));
+    });
+
+    const est = new Setting(contentEl).setName("Takes");
+    const estBtns = segmented(est.controlEl, ESTIMATE_PRESETS.map((p) => ({ label: p, value: parseDuration(p)! })), (m) => markEst(m));
+    const estInput = est.controlEl.createEl("input", { type: "text", cls: "next-up-triage-est", attr: { placeholder: "1h30", size: "5" } });
+    const markEst = (m: number | undefined, fromInput = false) => {
+      this.spec.estimate = m;
+      for (const b of estBtns) b.el.toggleClass("is-active", b.value === m);
+      if (!fromInput) estInput.value = "";
+    };
+    estInput.addEventListener("input", () => markEst(parseDuration(estInput.value), true));
+    estInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.isComposing) {
+        e.preventDefault();
+        this.finish("task");
+      }
+    });
+
+    const when = new Setting(contentEl).setName("When");
+    const days = [
+      { label: "Today", value: this.today as string | undefined },
+      { label: "Tomorrow", value: resolveDate("tomorrow", this.today) },
+      { label: "Not planned", value: undefined },
+    ];
+    const dayBtns = segmented(when.controlEl, days, (d) => markDay(d));
+    const markDay = (d: string | undefined) => {
+      this.spec.planned = d;
+      for (const b of dayBtns) b.el.toggleClass("is-active", b.value === d);
+    };
+    markDay(undefined);
+
+    const team = this.store.teamMembers();
+    if (team.length > 1) {
+      new Setting(contentEl).setName("Who").addDropdown((d) => {
+        for (const m of team) d.addOption(m, m);
+        d.setValue(this.spec.owner ?? this.me);
+        d.onChange((v) => (this.spec.owner = v || undefined));
+      });
+    }
+
+    new Setting(contentEl)
+      .addButton((b) => b.setButtonText("Dismiss").setTooltip("Not worth doing: mark it [-]").onClick(() => this.finish("dismiss")))
+      .addButton((b) => b.setButtonText("Idea").setTooltip("Keep it for later, out of the lists").onClick(() => this.finish("idea")))
+      .addButton((b) => b.setButtonText("Task").setCta().onClick(() => this.finish("task")));
+  }
+
+  private finish(action: TriageResult["action"]) {
+    if (action !== "dismiss" && !this.spec.title.trim()) return void new Notice("Give it a title.");
+    this.close();
+    if (action === "dismiss") return this.onDone({ action });
+    lastTriage.project = this.spec.project;
+    lastTriage.context = this.spec.context;
+    this.onDone({ action, spec: { ...this.spec, title: this.spec.title.trim() } });
   }
 
   onClose() {

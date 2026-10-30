@@ -19,7 +19,7 @@ import {
 } from "../src/query.ts";
 import { mk } from "./model.test.ts";
 
-const S = DEFAULT_SETTINGS;
+const S = { ...DEFAULT_SETTINGS, boardTags: ["today", "tomorrow", "tonight", "this-week", "frog"] };
 const ctx: Ctx = { today: "2026-09-24", me: "Alice", sourcePath: "Perso/To-Do.md", settings: S };
 
 function run(source: string, tasks: ReturnType<typeof mk>[], c: Ctx = ctx) {

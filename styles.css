@@ -148,3 +148,59 @@ a.nu-contact svg { width: 12px; height: 12px; }
 .nu-inbox-item { min-height: 40px; padding-left: 10px; }
 .nu-inbox-item.is-nested { margin-left: 22px; }
 .nu-inbox-item .nu-name { cursor: pointer; font-weight: 400; }
+
+/* time: estimates, planned days, load bars */
+.nu-sum { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.nu-est { cursor: pointer; font-variant-numeric: tabular-nums; }
+.nu-est.is-empty { color: var(--text-faint); background: transparent; border: 1px dashed var(--background-modifier-border); }
+.nu-planned { cursor: pointer; }
+.nu-planned.is-overdue { color: var(--color-red); background: rgba(var(--color-red-rgb), 0.12); }
+.nu-planned.is-today { color: var(--color-yellow); background: rgba(var(--color-yellow-rgb), 0.14); }
+.nu-waiting { color: var(--color-purple); background: rgba(var(--color-purple-rgb), 0.12); }
+.nu-pill.is-waiting { background: rgba(var(--color-purple-rgb), 0.18); color: var(--color-purple); }
+.nu-pill.is-idea { background: rgba(var(--color-cyan-rgb), 0.16); color: var(--color-cyan); }
+.nu-load { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; cursor: pointer; font-size: var(--font-ui-smaller); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nu-bar { position: relative; display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--background-modifier-border); overflow: hidden; }
+.nu-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--color-green); }
+.nu-load.is-over { color: var(--color-red); }
+.nu-load.is-over .nu-bar-fill, .nu-day.is-over .nu-bar-fill { background: var(--color-red); }
+
+/* project · context under a task's title */
+.nu-main.has-sub { flex-direction: column; align-items: flex-start; justify-content: center; }
+.nu-sub { font-size: var(--font-ui-smaller); color: var(--text-faint); line-height: 1.2; }
+
+/* review and leftovers: quick buttons */
+.nu-quick { flex: 0 0 auto; display: inline-flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+button.nu-quick-btn { padding: 1px 8px; height: auto; font-size: var(--font-ui-smaller); border-radius: 10px; box-shadow: none; background: var(--background-modifier-hover); color: var(--text-muted); cursor: pointer; }
+button.nu-quick-btn:hover { background: var(--interactive-accent); color: var(--text-on-accent); }
+
+/* projects and contexts */
+.nu-group { align-items: flex-start; padding-left: 4px; }
+.nu-group .nu-fold { align-self: center; margin-right: 2px; }
+.nu-group-main { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+.nu-group-next { font-size: var(--font-ui-small); color: var(--text-muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.nu-group-next .nu-link { color: var(--text-normal); }
+.nu-group .nu-chips, .nu-group .nu-actions { align-self: center; }
+.nu-flag.is-empty { color: var(--color-blue); background: rgba(var(--color-blue-rgb), 0.14); font-weight: 600; }
+.nu-flag.is-almost { color: var(--color-green); background: rgba(var(--color-green-rgb), 0.14); font-weight: 600; }
+.nu-flag.is-stalled { color: var(--color-orange); background: rgba(var(--color-orange-rgb), 0.14); }
+.nu-aim { margin: 6px 2px 0; font-size: var(--font-ui-small); font-weight: 600; color: var(--text-muted); }
+
+/* week strip */
+.nu-week-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 6px; }
+.nu-day { padding: 6px 8px; border: 1px solid var(--background-modifier-border); border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.nu-day:hover { border-color: var(--interactive-accent); }
+.nu-day.is-today { border-color: var(--interactive-accent); box-shadow: 0 0 0 1px rgba(var(--interactive-accent-rgb), 0.35); }
+.nu-day.is-off { opacity: 0.55; }
+.nu-day .nu-bar { width: 100%; }
+.nu-day-name { font-size: var(--font-ui-smaller); font-weight: 600; }
+.nu-day-load { font-size: var(--font-ui-smaller); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nu-day.is-over .nu-day-load { color: var(--color-red); }
+.nu-week-late { margin-top: 6px; font-size: var(--font-ui-smaller); color: var(--color-red); }
+
+/* inbox age */
+.nu-age { margin-left: 4px; }
+.nu-age.is-stale { color: var(--color-orange); background: rgba(var(--color-orange-rgb), 0.12); }
+.next-up-triage .setting-item { padding: 6px 0; }
+.next-up-triage .setting-item-control { flex-wrap: wrap; gap: 4px; }
+input.next-up-triage-est { width: 5em; }

@@ -1,7 +1,9 @@
 import { App, Notice, TFile, TFolder, normalizePath } from "obsidian";
 import type { CaptureKind, NextUpSettings } from "./settingsTypes.ts";
-import { type TaskData, type TaskIndex, buildIndex, fillPlaceholders, isoDate, linkList, safeFileName, taskFromFrontmatter } from "./model.ts";
+import { type GroupData, type TaskData, type TaskIndex, buildIndex, fillPlaceholders, groupFromFrontmatter, isoDate, linkList, safeFileName, taskFromFrontmatter } from "./model.ts";
+import { type GroupIndex, buildGroups, v04Patch } from "./plan.ts";
 import { type MovePatch, patchTags } from "./query.ts";
+import { formatDuration } from "./duration.ts";
 
 export interface NewTaskSpec {
   title: string;
@@ -17,6 +19,10 @@ export interface NewTaskSpec {
   /** basenames of the people the task is about */
   people?: string[];
   order?: number;
+  /** minutes */
+  estimate?: number;
+  planned?: string;
+  context?: string;
 }
 
 const LINK_TARGET = /\[\[([^\]|#]+)/;
@@ -26,6 +32,7 @@ export class TaskStore {
   app: App;
   settings: () => NextUpSettings;
   private cache: TaskIndex | null = null;
+  private groupCache: GroupIndex | null = null;
 
   constructor(app: App, settings: () => NextUpSettings) {
     this.app = app;
@@ -40,6 +47,7 @@ export class TaskStore {
   /** Drop the cached index; the plugin calls this on every vault/metadata change. */
   invalidate() {
     this.cache = null;
+    this.groupCache = null;
   }
 
   isTemplate(path: string): boolean {
@@ -56,6 +64,28 @@ export class TaskStore {
     if (!fm) return false;
     const s = this.settings();
     return fm[s.fields.type] === s.taskType;
+  }
+
+  /** `project` or `context` when the note is one (templates excluded). */
+  groupKind(file: TFile): GroupData["kind"] | undefined {
+    if (file.extension !== "md" || this.isTemplate(file.path)) return undefined;
+    const t = this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings().fields.type];
+    const s = this.settings();
+    return t === s.projectType ? "project" : t === s.contextType ? "context" : undefined;
+  }
+
+  loadGroups(): GroupIndex {
+    if (this.groupCache) return this.groupCache;
+    const s = this.settings();
+    const list: GroupData[] = [];
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const kind = this.groupKind(f);
+      if (!kind) continue;
+      const fm = (this.app.metadataCache.getFileCache(f)?.frontmatter ?? {}) as Record<string, unknown>;
+      list.push(groupFromFrontmatter(fm, f.path, f.stat.mtime, kind, s));
+    }
+    this.groupCache = buildGroups(list);
+    return this.groupCache;
   }
 
   taskFiles(): TFile[] {
@@ -112,10 +142,18 @@ export class TaskStore {
     return [...set].sort((a, b) => a.localeCompare(b));
   }
 
+  /** Project names: active project notes first, then the other names tasks use. */
   projects(): string[] {
+    const active = [...this.loadGroups().projects.values()].filter((g) => g.status === "active").map((g) => g.name).sort();
     const set = new Set<string>();
+    for (const g of this.loadGroups().projects.values()) if (g.status !== "active" && !["done", "dropped"].includes(g.status)) set.add(g.name);
     for (const t of this.loadIndex().tasks) if (t.project) set.add(t.project);
-    return [...set].sort();
+    for (const a of active) set.delete(a);
+    return [...active, ...[...set].sort()];
+  }
+
+  contexts(): string[] {
+    return [...this.loadGroups().contexts.values()].map((g) => g.name).sort();
   }
 
   /* ---------- writes ---------- */
@@ -146,6 +184,48 @@ export class TaskStore {
     await this.update(file, { [this.settings().fields.due]: due });
   }
 
+  /** Plan on `date` (or unplan). Planning a task nobody owns makes it mine: a day is someone's day. */
+  async setPlanned(file: TFile, date: string | undefined): Promise<void> {
+    const s = this.settings();
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+      if (date) fm[s.fields.planned] = date;
+      else delete fm[s.fields.planned];
+      const owner = fm[s.fields.owner];
+      if (date && s.me && !(typeof owner === "string" && owner.trim())) fm[s.fields.owner] = s.me;
+    });
+  }
+
+  /** Minutes, written as `45m` / `1h30`. */
+  async setEstimate(file: TFile, minutes: number | undefined): Promise<void> {
+    await this.update(file, { [this.settings().fields.estimate]: minutes == null ? undefined : formatDuration(minutes) });
+  }
+
+  async setSpent(file: TFile, minutes: number | undefined): Promise<void> {
+    await this.update(file, { [this.settings().fields.spent]: minutes == null ? undefined : formatDuration(minutes) });
+  }
+
+  async setProject(file: TFile, project: string | undefined): Promise<void> {
+    await this.update(file, { [this.settings().fields.project]: project ? this.linkByName(project, file.path) : undefined });
+  }
+
+  async setContext(file: TFile, context: string | undefined): Promise<void> {
+    await this.update(file, { [this.settings().fields.context]: context ? this.linkByName(context, file.path) : undefined });
+  }
+
+  /** Waiting on someone (status and who), or `undefined` to stop waiting. */
+  async setWaiting(file: TFile, who: string | undefined): Promise<void> {
+    const s = this.settings();
+    await this.update(file, {
+      [s.fields.status]: who === undefined ? s.todoStatus : s.waitingStatus,
+      [s.fields.waitingOn]: who ? this.linkByName(who, file.path) : undefined,
+    });
+  }
+
+  /** Kept in the daily review: it leaves the review for `reviewAfterDays`. */
+  async markReviewed(file: TFile): Promise<void> {
+    await this.update(file, { [this.settings().fields.reviewed]: isoDate(new Date()) });
+  }
+
   async setOrder(file: TFile, order: number): Promise<void> {
     await this.update(file, { [this.settings().fields.order]: Math.round(order * 1e6) / 1e6 });
   }
@@ -173,6 +253,8 @@ export class TaskStore {
     const patch: Record<string, unknown> = {};
     if (p.owner) patch[f.owner] = p.owner;
     if (p.project) patch[f.project] = this.linkByName(p.project, file.path);
+    if (p.planned !== undefined) patch[f.planned] = p.planned ?? undefined;
+    if (p.context) patch[f.context] = this.linkByName(p.context, file.path);
     if (Object.keys(patch).length) await this.update(file, patch);
     if (p.person) await this.addPerson(file, p.person, p.removePerson);
     if (p.status) await this.setStatus(file, p.status);
@@ -204,7 +286,7 @@ export class TaskStore {
     return `[[${this.app.metadataCache.fileToLinktext(target, sourcePath, true)}]]`;
   }
 
-  private linkByName(name: string, sourcePath: string): string {
+  linkByName(name: string, sourcePath: string): string {
     const f = this.app.metadataCache.getFirstLinkpathDest(name, sourcePath);
     return f ? this.link(f, sourcePath) : `[[${name}]]`;
   }
@@ -231,22 +313,37 @@ export class TaskStore {
       if (spec.people?.length) fm[f.person] = spec.people.map((p) => this.linkByName(p, path));
       if (spec.dependsOn?.length) fm[f.dependsOn] = spec.dependsOn.map((d) => this.linkByName(d, path));
       if (spec.order != null) fm[f.order] = spec.order;
+      if (spec.estimate != null) fm[f.estimate] = formatDuration(spec.estimate);
+      if (spec.planned) fm[f.planned] = spec.planned;
+      if (spec.context) fm[f.context] = this.linkByName(spec.context, path);
     });
     this.invalidate();
     return file;
   }
 
-  /** Turn every `status: someday` into the todo status (a task with no board tag is "One day" now). */
-  async convertSomeday(): Promise<number> {
+  /**
+   * v0.4: day tags (today, tonight, tomorrow) become a `planned` date counted from the note's last edit, so
+   * stale ones come back as leftovers; this-week and frog go; `someday` becomes the parked status.
+   * `dryRun` only counts.
+   */
+  async convertV04(dryRun = false): Promise<{ planned: number; untagged: number; parked: number }> {
     const s = this.settings();
-    let n = 0;
+    const out = { planned: 0, untagged: 0, parked: 0 };
     for (const file of this.taskFiles()) {
-      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-      if (fm?.[s.fields.status] !== "someday") continue;
-      await this.update(file, { [s.fields.status]: s.todoStatus });
-      n++;
+      const fm = (this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) as Record<string, unknown>;
+      const p = v04Patch(fm, isoDate(new Date(file.stat.mtime)), s);
+      if (!p) continue;
+      if (p.planned) out.planned++;
+      if (p.removeTags.length) out.untagged++;
+      if (p.status) out.parked++;
+      if (dryRun) continue;
+      if (p.removeTags.length) await this.setTags(file, [], p.removeTags);
+      const patch: Record<string, unknown> = {};
+      if (p.planned) patch[s.fields.planned] = p.planned;
+      if (p.status) patch[s.fields.status] = p.status;
+      if (Object.keys(patch).length) await this.update(file, patch);
     }
-    return n;
+    return out;
   }
 
   /** Create a note of a Capture kind: template kept whole (frontmatter included), placeholders filled. */

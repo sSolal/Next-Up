@@ -1,8 +1,12 @@
 import { MarkdownRenderChild, Notice, TFile, setIcon } from "obsidian";
 import type NextUpPlugin from "./main.ts";
-import { linkBasename } from "./model.ts";
+import type { NewTaskSpec } from "./store.ts";
+import { isoDate, linkBasename } from "./model.ts";
 import { folderOf } from "./query.ts";
-import { type CheckItem, type InboxQuery, checkItems, isChecked, itemTitle, parseInboxQuery, promotedLine, replaceLine, toggledLine } from "./inbox.ts";
+import { type CheckItem, type InboxQuery, checkItems, dismissedLine, ignoredByFrontmatter, isChecked, itemTitle, parseInboxQuery, promotedLine, replaceLine, toggledLine } from "./inbox.ts";
+import { ageLabel } from "./crm.ts";
+import { splitEstimate } from "./duration.ts";
+import { TriageModal } from "./modals.ts";
 
 interface NoteItems {
   file: TFile;
@@ -58,7 +62,8 @@ export class InboxBlock extends MarkdownRenderChild {
     if (file.extension !== "md" || file.path === this.sourcePath) return false;
     if (f && !file.path.startsWith(f + "/")) return false;
     const store = this.plugin.store;
-    return !store.isTemplate(file.path) && !store.isTaskFile(file) && !this.plugin.people.isPersonFile(file);
+    if (store.isTemplate(file.path) || store.isTaskFile(file) || store.groupKind(file) || this.plugin.people.isPersonFile(file)) return false;
+    return !ignoredByFrontmatter(this.plugin.app.metadataCache.getFileCache(file)?.frontmatter, this.plugin.settings.inboxIgnoreKeys);
   }
 
   /** Notes whose metadata lists a checkbox, then their lines read from disk. */
@@ -100,6 +105,10 @@ export class InboxBlock extends MarkdownRenderChild {
     const head = group.createDiv({ cls: "nu-inbox-source" });
     setIcon(head.createSpan({ cls: "nu-chip-icon" }), "file-text");
     this.link(head, n.file.path, n.file.basename);
+    const today = isoDate(new Date());
+    const edited = isoDate(new Date(n.file.stat.mtime));
+    const age = head.createSpan({ cls: "nu-chip nu-age", text: ageLabel(edited, today), attr: { "aria-label": `Note last edited ${edited}` } });
+    if (n.items.some((i) => !isChecked(i)) && edited < today && Date.now() - n.file.stat.mtime > 7 * 86400000) age.addClass("is-stale");
     const base = Math.min(...n.items.map((i) => i.depth));
     for (const item of n.items) this.renderItem(group, n.file, item, item.depth > base);
   }
@@ -123,7 +132,10 @@ export class InboxBlock extends MarkdownRenderChild {
     if (!done) {
       const promote = actions.createSpan({ cls: "nu-action", attr: { "aria-label": "Make it a task" } });
       setIcon(promote, "arrow-right-circle");
-      promote.addEventListener("click", () => void this.promote(file, item));
+      promote.addEventListener("click", () => this.triage(file, item));
+      const dismiss = actions.createSpan({ cls: "nu-action", attr: { "aria-label": "Not a task: dismiss ([-])" } });
+      setIcon(dismiss, "x");
+      dismiss.addEventListener("click", () => void this.edit(file, item, dismissedLine(item)));
     }
   }
 
@@ -161,18 +173,24 @@ export class InboxBlock extends MarkdownRenderChild {
     return ok;
   }
 
-  /** A task named after the item (owner me, the note's project if it has one); the item becomes a link to it. */
-  private async promote(file: TFile, item: CheckItem) {
+  /** Sort the item in one go: a task (project, context, time, day), an idea, or dismissed. */
+  private triage(file: TFile, item: CheckItem) {
     const s = this.plugin.settings;
-    const store = this.plugin.store;
     const fm = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+    const typed = splitEstimate(itemTitle(item.text));
+    new TriageModal(this.plugin.app, this.plugin.store, typed.title, { project: linkBasename(fm?.[s.fields.project]), owner: s.me || undefined }, (r) => {
+      if (r.action === "dismiss") return void this.edit(file, item, dismissedLine(item));
+      const spec = { ...r.spec, estimate: r.spec.estimate ?? typed.estimate, folder: this.q.to || undefined };
+      if (r.action === "idea") spec.status = s.parkedStatuses[0] ?? s.todoStatus;
+      void this.promote(file, item, spec);
+    }).open();
+  }
+
+  /** A task from the item; the item becomes a link to it. */
+  private async promote(file: TFile, item: CheckItem, spec: NewTaskSpec) {
+    const store = this.plugin.store;
     try {
-      const task = await store.createTask({
-        title: itemTitle(item.text),
-        folder: this.q.to || undefined,
-        owner: s.me || undefined,
-        project: linkBasename(fm?.[s.fields.project]),
-      });
+      const task = await store.createTask(spec);
       const ok = await this.edit(file, item, promotedLine(item, store.link(task, file.path)));
       new Notice(ok ? `Task: ${task.basename}` : `Task ${task.basename} created, but the line was left as is.`);
     } catch (e) {

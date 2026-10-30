@@ -5,9 +5,12 @@ import { TaskStore } from "./store.ts";
 import { TodoBlock } from "./todoView.ts";
 import { CrmBlock } from "./crmView.ts";
 import { InboxBlock } from "./inboxView.ts";
+import { ProjectsBlock, WeekBlock } from "./projectsView.ts";
+import { editCapacity } from "./listView.ts";
+import { addDays, isoDate } from "./model.ts";
 import { PeopleStore } from "./peopleStore.ts";
 import { NEVER } from "./crm.ts";
-import { CaptureModal, type CapturePreset, ContactModal, StringSuggestModal } from "./modals.ts";
+import { CaptureModal, type CapturePreset, ContactModal, EstimateModal, StringSuggestModal } from "./modals.ts";
 import { captureKindsFor } from "./model.ts";
 import type { DragState } from "./listView.ts";
 import { KbService } from "./kb/service.ts";
@@ -76,6 +79,12 @@ export default class NextUpPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor("next-up-inbox", (source, el, ctx) => {
       ctx.addChild(new InboxBlock(this, el, source, ctx.sourcePath));
     });
+    this.registerMarkdownCodeBlockProcessor("next-up-projects", (source, el, ctx) => {
+      ctx.addChild(new ProjectsBlock(this, el, source, ctx.sourcePath));
+    });
+    this.registerMarkdownCodeBlockProcessor("next-up-week", (source, el, ctx) => {
+      ctx.addChild(new WeekBlock(this, el, source, ctx.sourcePath));
+    });
 
     this.addRibbonIcon("list-checks", "Open home", () => this.openHome());
     this.addRibbonIcon("plus-circle", "Capture", () => this.openCapture());
@@ -112,15 +121,56 @@ export default class NextUpPlugin extends Plugin {
       }),
     });
     this.addCommand({
-      id: "move-to",
-      name: "Move this task to…",
+      id: "plan",
+      name: "Plan this task…",
       checkCallback: (checking) => this.withActiveTaskFile(checking, (f) => {
-        const oneDay = "One day (no tag)";
-        new StringSuggestModal(this.app, [...this.settings.boardTags, oneDay], (choice) => {
-          const board = this.settings.boardTags;
-          void this.store.setTags(f, choice === oneDay ? [] : [choice], board.filter((x) => x !== choice));
-        }, "Move to…", false).open();
+        const today = isoDate(new Date());
+        const days: [string, string | undefined][] = [["Today", today], ["Tomorrow", addDays(today, 1)], ["In 2 days", addDays(today, 2)], ["In a week", addDays(today, 7)], ["Not planned", undefined]];
+        new StringSuggestModal(this.app, days.map((d) => d[0]), (choice) => {
+          const d = days.find((x) => x[0] === choice);
+          if (d) void this.store.setPlanned(f, d[1]);
+        }, "Plan on…", false).open();
       }),
+    });
+    this.addCommand({
+      id: "plan-today",
+      name: "Plan this task today",
+      checkCallback: (checking) => this.withActiveTaskFile(checking, async (f) => {
+        await this.store.setPlanned(f, isoDate(new Date()));
+        new Notice(`Planned today: ${f.basename}`);
+      }),
+    });
+    this.addCommand({
+      id: "estimate",
+      name: "Estimate this task…",
+      checkCallback: (checking) => this.withActiveTaskFile(checking, (f) => {
+        const t = this.store.taskData(f);
+        new EstimateModal(this.app, `How long for “${f.basename}”?`, t?.estimate, (m) => void this.store.setEstimate(f, m)).open();
+      }),
+    });
+    this.addCommand({
+      id: "set-hours-today",
+      name: "Set my hours for today…",
+      callback: () => editCapacity(this, isoDate(new Date()), isoDate(new Date())),
+    });
+    this.addCommand({
+      id: "set-hours-tomorrow",
+      name: "Set my hours for tomorrow…",
+      callback: () => editCapacity(this, addDays(isoDate(new Date()), 1), isoDate(new Date())),
+    });
+    this.addCommand({
+      id: "move-to",
+      name: "Move this task to a board column…",
+      checkCallback: (checking) => {
+        if (!this.settings.boardTags.length) return false;
+        return this.withActiveTaskFile(checking, (f) => {
+          const oneDay = "One day (no tag)";
+          new StringSuggestModal(this.app, [...this.settings.boardTags, oneDay], (choice) => {
+            const board = this.settings.boardTags;
+            void this.store.setTags(f, choice === oneDay ? [] : [choice], board.filter((x) => x !== choice));
+          }, "Move to…", false).open();
+        });
+      },
     });
     this.addCommand({
       id: "toggle-tag",
@@ -149,11 +199,20 @@ export default class NextUpPlugin extends Plugin {
       ),
     });
     this.addCommand({
-      id: "convert-someday",
-      name: "Convert “someday” tasks to todo (no tag = One day)",
+      id: "migrate-v04",
+      name: "Migrate tasks to v0.4 (day tags → planned dates)…",
       callback: async () => {
-        const n = await this.store.convertSomeday();
-        new Notice(n ? `Converted ${n} task${n > 1 ? "s" : ""}.` : "No task has status someday.");
+        const n = await this.store.convertV04(true);
+        if (!n.untagged && !n.parked) return void new Notice("Nothing to migrate.");
+        const summary = `${n.planned} get a planned date from their day tag, ${n.untagged} lose board tags, ${n.parked} “someday” become ${this.settings.parkedStatuses[0] ?? "todo"}.`;
+        new StringSuggestModal(this.app, ["Migrate now", "Cancel"], async (c) => {
+          if (c !== "Migrate now") return;
+          const done = await this.store.convertV04();
+          // the day tags are gone: stop treating them as columns
+          this.settings.boardTags = this.settings.boardTags.filter((t) => !["today", "tomorrow", "tonight", "this-week", "frog"].includes(t));
+          await this.saveSettings();
+          new Notice(`Migrated: ${done.planned} planned, ${done.untagged} untagged, ${done.parked} parked.`);
+        }, summary, false).open();
       },
     });
 

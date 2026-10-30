@@ -1,6 +1,9 @@
 import { Menu, Notice, TFile, setIcon } from "obsidian";
 import type NextUpPlugin from "./main.ts";
-import { type TaskData, type TaskIndex, ancestors, childrenOf, descendants, isBlocked, blockers, isDone, parentOf } from "./model.ts";
+import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, descendants, isActionable, isBlocked, blockers, isDone, parentOf } from "./model.ts";
+import { capacityMin } from "./settingsTypes.ts";
+import { formatDuration, splitEstimate } from "./duration.ts";
+import { effectiveContext, effectiveProject, remaining } from "./plan.ts";
 import {
   type Ctx,
   type Query,
@@ -15,9 +18,12 @@ import {
   nextOrder,
   parseOutline,
   planOrder,
+  plannedClass,
+  plannedDay,
   prefill,
+  treeRemaining,
 } from "./query.ts";
-import { DateModal, StringSuggestModal, TaskSuggestModal, TextModal } from "./modals.ts";
+import { CapacityModal, DateModal, EstimateModal, SpentModal, StringSuggestModal, TaskSuggestModal, TextModal } from "./modals.ts";
 
 /** What a list renders into: a `next-up` block, or a person card of a `next-up-crm` block. */
 export interface ListHost {
@@ -87,7 +93,7 @@ export class ListView {
 
   private draw(el: HTMLElement) {
     const q = this.q;
-    this.ctx = this.block.ctx();
+    this.ctx = { ...this.block.ctx(), groups: this.store.loadGroups() };
     this.idx = this.store.loadIndex();
     this.matcher = new Matcher(this.idx, this.ctx);
     const matched = this.idx.tasks.filter((t) => this.matcher.matches(t, q));
@@ -97,18 +103,34 @@ export class ListView {
     el.addClass("nu-list");
     for (const e of q.errors) el.createDiv({ cls: "nu-error", text: `next-up: ${e}` });
 
-    if (q.title || q.max) {
+    const day = plannedDay(q, this.ctx.today);
+    if (q.title || q.max || day) {
       const head = el.createDiv({ cls: "nu-head" });
       if (q.title) head.createSpan({ cls: "nu-title", text: q.title });
       const n = countNodes(this.roots, this.s, true, !q.max);
       const count = head.createSpan({ cls: "nu-count", text: q.max ? `${n}/${q.max}` : String(n) });
       if (q.max && n > q.max) count.addClass("is-over");
+      const sum = treeRemaining(this.roots, this.idx, this.s);
+      if (day) this.renderLoad(head, day, sum.minutes, sum.unestimated);
+      else if (sum.minutes) head.createSpan({ cls: "nu-sum", text: formatDuration(sum.minutes), attr: { "aria-label": sum.unestimated ? `${sum.unestimated} without an estimate` : "Time left" } });
     }
 
     const list = el.createDiv({ cls: "nu-rows" });
     this.renderNodes(list, this.roots, 0);
     if (!this.roots.length) list.createDiv({ cls: "nu-empty", text: "Nothing here." });
     if (q.add) this.renderInput(list, "", 0);
+  }
+
+  /** `3h20 / 6h` and a bar, red above the day's capacity; a click sets the hours of that day. */
+  private renderLoad(head: HTMLElement, day: string, minutes: number, unestimated: number) {
+    const cap = capacityMin(this.s, day);
+    const load = head.createSpan({ cls: "nu-load", attr: { "aria-label": `Click to set the hours of ${dueLabel(day, this.ctx.today)}` } });
+    const bar = load.createSpan({ cls: "nu-bar" });
+    const fill = bar.createSpan({ cls: "nu-bar-fill" });
+    fill.style.width = `${Math.min(100, cap ? (minutes / cap) * 100 : minutes ? 100 : 0)}%`;
+    load.createSpan({ cls: "nu-load-text", text: `${formatDuration(minutes)} / ${formatDuration(cap)}${unestimated ? ` · ${unestimated} without estimate` : ""}` });
+    load.toggleClass("is-over", minutes > cap);
+    load.addEventListener("click", () => editCapacity(this.plugin, day, this.ctx.today));
   }
 
   /** Dropping on the block but not on a row: move here, last. Wired once per host. */
@@ -195,6 +217,7 @@ export class ListView {
       const pill = chips.createSpan({ cls: `nu-pill is-${t.status}`, text: t.status, attr: { "aria-label": "Click: next status" } });
       pill.addEventListener("click", () => void this.cycleStatus(t));
     }
+    this.renderTimeChips(chips, t, done);
     if (t.due) {
       const due = chips.createSpan({ cls: `nu-chip nu-due ${dueClass(t, this.ctx)}`, attr: { "aria-label": `Due ${t.due}` } });
       setIcon(due.createSpan({ cls: "nu-chip-icon" }), "calendar");
@@ -211,6 +234,9 @@ export class ListView {
     }
     if (t.owner && t.owner.toLowerCase() !== this.ctx.me.toLowerCase()) chips.createSpan({ cls: "nu-chip nu-owner", text: t.owner });
     if (node.progress) chips.createSpan({ cls: "nu-chip nu-progress", text: `${node.progress.done}/${node.progress.total}` });
+    if (!done && !node.crumbs.length) this.renderGroupChip(main, t);
+
+    if (!done && (this.q.view === "review" || this.q.view === "leftovers")) this.renderQuickButtons(row, t);
 
     const actions = row.createSpan({ cls: "nu-actions" });
     const add = actions.createSpan({ cls: "nu-action", attr: { "aria-label": "Add a subtask" } });
@@ -225,6 +251,82 @@ export class ListView {
     });
 
     this.wireDrag(row, node, siblings, index);
+  }
+
+  /** Waiting on, planned day (unless the block is that day), time left (or a nudge to estimate). */
+  private renderTimeChips(chips: HTMLElement, t: TaskData, done: boolean) {
+    const s = this.s;
+    if (t.status === s.waitingStatus && t.waitingOn) chips.createSpan({ cls: "nu-chip nu-waiting", text: `⏳ ${t.waitingOn}` });
+    if (t.planned && !plannedDay(this.q, this.ctx.today)) {
+      const chip = chips.createSpan({ cls: `nu-chip nu-planned ${plannedClass(t, this.ctx)}`, attr: { "aria-label": `Planned ${t.planned} (click to replan)` } });
+      setIcon(chip.createSpan({ cls: "nu-chip-icon" }), "sun");
+      chip.appendText(dueLabel(t.planned, this.ctx.today));
+      chip.addEventListener("click", (ev) => this.planMenu(ev, t));
+    }
+    if (done) {
+      if (t.spent != null) chips.createSpan({ cls: "nu-chip nu-est", text: `${formatDuration(t.spent)}${t.estimate != null ? ` / ${formatDuration(t.estimate)}` : ""}`, attr: { "aria-label": "Spent / estimated" } });
+      return;
+    }
+    if (!isActionable(t, s)) return;
+    const left = remaining(t, this.idx, s);
+    const fromKids = left > 0 && left !== t.estimate;
+    const est = chips.createSpan({ cls: "nu-chip nu-est", attr: { "aria-label": fromKids ? "Time left on its subtasks" : "Estimate (click to change)" } });
+    if (left > 0) est.setText(formatDuration(left));
+    else {
+      est.addClass("is-empty");
+      est.setText("?");
+      est.setAttr("aria-label", "How long? (click)");
+    }
+    if (!fromKids) est.addEventListener("click", () => this.pickEstimate(t));
+  }
+
+  /** Small grey line under the title: project · context, when the block is not already about them. */
+  private renderGroupChip(main: HTMLElement, t: TaskData) {
+    const parts: string[] = [];
+    const byProject = this.q.conds.some((c) => c.k === "project");
+    const byContext = this.q.conds.some((c) => c.k === "context");
+    const project = effectiveProject(t, this.idx);
+    const context = effectiveContext(t, this.idx, this.ctx.groups!);
+    if (project && !byProject) parts.push(project);
+    if (context && !byContext && context !== project) parts.push(context);
+    if (!parts.length) return;
+    main.addClass("has-sub");
+    main.createDiv({ cls: "nu-sub", text: parts.join(" · ") });
+  }
+
+  /** Review: plan today · keep (seen, back in a while) · idea · drop. Leftovers: today · tomorrow · unplan · drop. */
+  private renderQuickButtons(row: HTMLElement, t: TaskData) {
+    const f = this.store.fileFor(t);
+    if (!f) return;
+    const store = this.store;
+    const s = this.s;
+    const today = this.ctx.today;
+    const drop = s.doneStatuses.find((x) => x !== s.doneStatuses[0]) ?? s.doneStatuses[0];
+    const box = row.createDiv({ cls: "nu-quick" });
+    const btn = (label: string, tip: string, fn: () => Promise<void>) => {
+      const b = box.createEl("button", { cls: "nu-quick-btn", text: label, attr: { "aria-label": tip } });
+      b.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void fn();
+      });
+    };
+    if (this.q.view === "review") {
+      btn("Today", "Plan it today", async () => {
+        await store.setPlanned(f, today);
+        await store.markReviewed(f);
+      });
+      if (!effectiveProject(t, this.idx)) btn("Project…", "Attach it to a project", async () => this.pickProject(t, f, true));
+      btn("Keep", `Still relevant: out of the review for ${s.reviewAfterDays} days`, () => store.markReviewed(f));
+      btn("Idea", "Not now: keep it as an idea", async () => {
+        await store.setStatus(f, s.parkedStatuses[0] ?? s.todoStatus);
+        await store.markReviewed(f);
+      });
+    } else {
+      btn("Today", "Do it today", () => store.setPlanned(f, today));
+      btn("Tomorrow", "Move it to tomorrow", () => store.setPlanned(f, addDays(today, 1)));
+      btn("Unplan", "No day for it (it stays in its project)", () => store.setPlanned(f, undefined));
+    }
+    btn("Drop", "Not doing it", () => store.setStatus(f, drop));
   }
 
   private taskLink(el: HTMLElement, t: TaskData): HTMLElement {
@@ -257,7 +359,7 @@ export class ListView {
     const input = row.createEl("input", {
       type: "text",
       cls: "nu-add-input",
-      attr: { placeholder: parentPath ? "Subtask… (Enter to add, Esc to close)" : "Add a task… (paste a list to add several)" },
+      attr: { placeholder: parentPath ? "Subtask… end with 30m or 1h to estimate (Enter, Esc)" : "Add a task… end with 30m or 1h to estimate (paste a list to add several)" },
     });
     if (mine) input.value = this.input.value;
     input.addEventListener("focus", () => {
@@ -340,8 +442,10 @@ export class ListView {
         const under = top ? topParent : stack[depth - 1];
         const o = top ? order++ : (childOrder.get(under!) ?? 0) + 1;
         if (!top) childOrder.set(under!, o);
+        const typed = splitEstimate(item.title);
         const file = await this.store.createTask({
-          title: item.title,
+          title: typed.title,
+          estimate: typed.estimate,
           folder,
           // a subtask inherits its parent's board tags, so only top-level tasks of the add row get them
           tags: top && !parent ? pre.tags : [],
@@ -351,6 +455,9 @@ export class ListView {
           people: pre.person ? [pre.person] : parent?.people,
           parentPath: under,
           order: o,
+          // like board tags, a planned day is inherited by subtasks
+          planned: top && !parent ? pre.planned : undefined,
+          context: top ? pre.context : undefined,
         });
         stack.push(file.path);
       }
@@ -372,7 +479,57 @@ export class ListView {
   private async toggleDone(t: TaskData) {
     const f = this.file(t);
     if (!f) return;
-    await this.store.setStatus(f, isDone(t, this.s) ? this.s.todoStatus : this.s.doneStatuses[0] ?? "done");
+    const finishing = !isDone(t, this.s);
+    await this.store.setStatus(f, finishing ? this.s.doneStatuses[0] ?? "done" : this.s.todoStatus);
+    if (finishing && this.s.askSpent && t.estimate != null && t.spent == null && !childrenOf(t, this.idx).length) {
+      new SpentModal(this.plugin.app, t.name, t.estimate, (m) => void this.store.setSpent(f, m)).open();
+    }
+  }
+
+  private pickEstimate(t: TaskData) {
+    const f = this.file(t);
+    if (!f) return;
+    new EstimateModal(this.plugin.app, `How long for “${t.name}”?`, t.estimate, (m) => void this.store.setEstimate(f, m)).open();
+  }
+
+  private pickProject(t: TaskData, f: TFile, review = false) {
+    const none = "— no project —";
+    new StringSuggestModal(this.plugin.app, [...this.store.projects(), none], (p) => {
+      void (async () => {
+        await this.store.setProject(f, p === none ? undefined : p);
+        if (review) await this.store.markReviewed(f);
+      })();
+    }, "Project (or type a new name)").open();
+  }
+
+  private pickContext(t: TaskData, f: TFile) {
+    const none = "— from the project —";
+    new StringSuggestModal(this.plugin.app, [...this.store.contexts(), none], (c) => void this.store.setContext(f, c === none ? undefined : c), "Context", false).open();
+  }
+
+  private pickWaiting(t: TaskData, f: TFile) {
+    const stop = "— not waiting any more —";
+    const choices = [...this.store.teamMembers(this.idx), ...(t.status === this.s.waitingStatus ? [stop] : [])];
+    new StringSuggestModal(this.plugin.app, choices, (who) => void this.store.setWaiting(f, who === stop ? undefined : who), "Waiting on whom? (or type a name)").open();
+  }
+
+  /** Today · tomorrow · in 2 days · next Monday · a date · no day. */
+  private planMenu(ev: MouseEvent, t: TaskData) {
+    const f = this.file(t);
+    if (!f) return;
+    const menu = new Menu();
+    this.addPlanItems(menu, t, f);
+    menu.showAtMouseEvent(ev);
+  }
+
+  private addPlanItems(menu: Menu, t: TaskData, f: TFile) {
+    const today = this.ctx.today;
+    const [y, m, d] = today.split("-").map(Number);
+    const monday = addDays(today, 7 - ((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7));
+    const days: [string, string][] = [["Today", today], ["Tomorrow", addDays(today, 1)], ["In 2 days", addDays(today, 2)], ["Next Monday", monday]];
+    for (const [label, date] of days) menu.addItem((i) => i.setTitle(`Plan: ${label}`).setIcon("sun").setChecked(t.planned === date).onClick(() => void this.store.setPlanned(f, date)));
+    menu.addItem((i) => i.setTitle("Plan on…").setIcon("calendar-days").onClick(() => new DateModal(this.plugin.app, `Plan “${t.name}” on`, t.planned ?? today, (d) => void this.store.setPlanned(f, d)).open()));
+    if (t.planned) menu.addItem((i) => i.setTitle("Unplan").setIcon("sun-dim").onClick(() => void this.store.setPlanned(f, undefined)));
   }
 
   private async cycleStatus(t: TaskData) {
@@ -396,9 +553,16 @@ export class ListView {
     const f = this.file(t);
     if (!f) return;
     const menu = new Menu();
+    this.addPlanItems(menu, t, f);
+    menu.addItem((i) => i.setTitle("Estimate…").setIcon("timer").onClick(() => this.pickEstimate(t)));
+    menu.addSeparator();
     menu.addItem((i) => i.setTitle("Status…").setIcon("circle-dot").onClick(() => new StringSuggestModal(app, s.statuses, (st) => void store.setStatus(f, st), `Status (now ${t.status})`, false).open()));
+    menu.addItem((i) => i.setTitle("Waiting on…").setIcon("hourglass").onClick(() => this.pickWaiting(t, f)));
+    if (!s.parkedStatuses.includes(t.status) && s.parkedStatuses[0]) menu.addItem((i) => i.setTitle(`To ${s.parkedStatuses[0]}s`).setIcon("lightbulb").onClick(() => void store.setStatus(f, s.parkedStatuses[0])));
+    menu.addItem((i) => i.setTitle("Project…").setIcon("folder-kanban").onClick(() => this.pickProject(t, f)));
+    menu.addItem((i) => i.setTitle("Context…").setIcon("brain").onClick(() => this.pickContext(t, f)));
     menu.addItem((i) => i.setTitle("Due…").setIcon("calendar").onClick(() => this.pickDue(t)));
-    menu.addItem((i) => i.setTitle("Move to…").setIcon("arrow-right-left").onClick(() => this.moveTo(t, f)));
+    if (s.boardTags.length) menu.addItem((i) => i.setTitle("Move to…").setIcon("arrow-right-left").onClick(() => this.moveTo(t, f)));
     menu.addItem((i) => i.setTitle("Tags…").setIcon("tag").onClick(() => this.toggleTag(t, f)));
     menu.addSeparator();
     menu.addItem((i) => i.setTitle("Add subtask").setIcon("plus").onClick(() => this.openSubtaskInput(t)));
@@ -582,4 +746,16 @@ export class ListView {
       new Notice(`Next Up: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+}
+
+/** Set the focused hours of `day` (this device's settings: each person has their own). */
+export function editCapacity(plugin: NextUpPlugin, day: string, today: string) {
+  const s = plugin.settings;
+  new CapacityModal(plugin.app, dueLabel(day, today), capacityMin(s, day) / 60, (h) => {
+    if (h === undefined) delete s.capacity[day];
+    else s.capacity[day] = h;
+    // past days are of no use
+    for (const d of Object.keys(s.capacity)) if (d < today) delete s.capacity[d];
+    void plugin.saveSettings();
+  }).open();
 }

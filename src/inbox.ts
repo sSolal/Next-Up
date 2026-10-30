@@ -143,3 +143,22 @@ export function itemTitle(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/**
+ * Notes an inbox leaves alone: a key of `keys` in their frontmatter (`kanban-plugin: board`, whose cards are
+ * checkboxes), except `nextup`, which only hides the note when it says so (`nextup: ignore`).
+ */
+export function ignoredByFrontmatter(fm: Record<string, unknown> | undefined, keys: string[]): boolean {
+  if (!fm) return false;
+  for (const k of keys) {
+    if (!(k in fm)) continue;
+    if (k !== "nextup") return true;
+    if (/^(ignore|hide|off|false|no)$/i.test(String(fm[k]).trim())) return true;
+  }
+  return false;
+}
+
+/** The item set aside without making it a task: `[-]`, which inboxes show as done. */
+export function dismissedLine(item: CheckItem): string {
+  return item.raw.replace(/\[(.)\]/, "[-]");
+}

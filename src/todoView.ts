@@ -29,7 +29,7 @@ export class TodoBlock extends MarkdownRenderChild {
     this.registerEvent(app.vault.on("delete", () => this.scheduleRender()));
     this.registerEvent(app.vault.on("rename", () => this.scheduleRender()));
     this.plugin.onSettingsChange(this, () => this.scheduleRender());
-    if (this.q.view === "list") {
+    if (this.q.view !== "graph") {
       this.list = new ListView(this, this.q);
       ListView.wireBlockDrop(this.containerEl, this.plugin, () => this.list);
     }
@@ -45,7 +45,8 @@ export class TodoBlock extends MarkdownRenderChild {
   }
 
   private maybeRefresh(file: TFile) {
-    if (file.path === this.plugin.settings.teamNote || this.plugin.store.isTaskFile(file) || this.list?.shown.has(file.path)) this.scheduleRender();
+    const store = this.plugin.store;
+    if (file.path === this.plugin.settings.teamNote || store.isTaskFile(file) || store.groupKind(file) || this.list?.shown.has(file.path)) this.scheduleRender();
   }
 
   private scheduleRender() {

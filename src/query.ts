@@ -1,5 +1,6 @@
 import type { NextUpSettings } from "./settingsTypes.ts";
-import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, isDone, linkBasename, normTag, parentOf, parseDate } from "./model.ts";
+import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, isDone, isParked, linkBasename, normTag, parentOf, parseDate } from "./model.ts";
+import { type GroupIndex, NO_GROUPS, dueForReview, effectiveContext, effectivePlanned, effectiveProject, lastTouched, sumRemaining } from "./plan.ts";
 
 /* ---------- block query: parsing ---------- */
 
@@ -22,14 +23,25 @@ export type Cond =
   | { k: "parent"; parent: string }
   /** a person the task is about: a name, `this`, `any` or `none` */
   | { k: "person"; person: string }
+  /** the day it is planned for (inherited from ancestors); `overdue` = before today and still open */
+  | { k: "planned"; op: "overdue" | "week" | "before" | "after" | "on" | "any" | "none"; date?: string }
+  /** a context name, `this` or `none` (inherited from the project, then the ancestors) */
+  | { k: "context"; context: string }
+  | { k: "estimate"; op: "any" | "none" }
+  /** no project or no estimate: still to sort */
+  | { k: "unsorted" }
+  /** not kept in a review for `reviewAfterDays` */
+  | { k: "review" }
   | { k: "text"; text: string }
   | { k: "not"; c: Cond }
   | { k: "or"; alts: Cond[][] };
 
-export type SortKey = "order" | "due" | "name" | "status";
+export type SortKey = "order" | "due" | "name" | "status" | "planned" | "estimate" | "stale" | "project";
+const SORT_KEYS: SortKey[] = ["order", "due", "name", "status", "planned", "estimate", "stale", "project"];
 
 export interface Query {
-  view: "list" | "graph";
+  /** list · graph · review (keep / plan / drop buttons) · leftovers (replan / drop buttons) */
+  view: "list" | "graph" | "review" | "leftovers";
   title?: string;
   /** AND-ed */
   conds: Cond[];
@@ -58,6 +70,8 @@ export interface Ctx {
   /** path of the note holding the block */
   sourcePath: string;
   settings: NextUpSettings;
+  /** project and context notes, for inherited contexts */
+  groups?: GroupIndex;
 }
 
 const TRUE = /^(true|yes|1|on)$/i;
@@ -145,6 +159,23 @@ export function parseCond(key: string, value: string): Cond | string {
     case "text":
     case "name":
       return { k: "text", text: lv };
+    case "planned":
+    case "plan": {
+      if (["overdue", "late", "leftover", "leftovers"].includes(lv)) return { k: "planned", op: "overdue" };
+      if (lv === "week" || lv === "this-week") return { k: "planned", op: "week" };
+      if (lv === "any" || lv === "none") return { k: "planned", op: lv };
+      const d = parseDateOp("planned", v);
+      return typeof d === "string" ? d : { k: "planned", ...d };
+    }
+    case "context":
+      return { k: "context", context: lv === "this" || lv === "none" ? lv : linkBasename(v) ?? v };
+    case "estimate":
+      if (lv === "any" || lv === "none") return { k: "estimate", op: lv };
+      return "estimate: use any or none";
+    case "unsorted":
+      return TRUE.test(lv) || lv === "" ? { k: "unsorted" } : { k: "not", c: { k: "unsorted" } };
+    case "review":
+      return TRUE.test(lv) || lv === "due" || lv === "" ? { k: "review" } : { k: "not", c: { k: "review" } };
   }
   return `unknown filter “${key}”`;
 }
@@ -197,7 +228,7 @@ export function parseQuery(source: string): Query {
     const [, key, v] = m;
     switch (key.toLowerCase()) {
       case "view":
-        if (v === "graph") q.view = "graph";
+        if (v === "graph" || v === "review" || v === "leftovers") q.view = v;
         else if (["task", "project", "todo", "list"].includes(v)) legacy = v;
         else q.errors.push(`unknown view “${v}”`);
         break;
@@ -205,8 +236,8 @@ export function parseQuery(source: string): Query {
         q.title = v;
         break;
       case "sort":
-        if (["order", "due", "name", "status"].includes(v)) q.sort = v as SortKey;
-        else q.errors.push(`sort: use order, due, name or status`);
+        if ((SORT_KEYS as string[]).includes(v)) q.sort = v as SortKey;
+        else q.errors.push(`sort: use ${SORT_KEYS.join(", ")}`);
         break;
       case "max":
       case "limit": {
@@ -308,7 +339,7 @@ export class Matcher {
   }
 
   private openOrRecent(t: TaskData, q: Query): boolean {
-    if (!isDone(t, this.ctx.settings)) return true;
+    if (!isDone(t, this.ctx.settings)) return !isParked(t, this.ctx.settings);
     if (q.done === "show") return true;
     return q.done === "today" && t.completed === this.ctx.today;
   }
@@ -360,9 +391,10 @@ export class Matcher {
         return !f || t.path.startsWith(f + "/");
       }
       case "project": {
-        if (c.project === "none") return !t.project;
+        const own = effectiveProject(t, this.idx);
+        if (c.project === "none") return !own;
         const p = c.project === "this" ? baseName(ctx.sourcePath) : c.project;
-        return !!t.project && t.project.toLowerCase() === p.toLowerCase();
+        return !!own && own.toLowerCase() === p.toLowerCase();
       }
       case "parent": {
         const p = parentOf(t, this.idx);
@@ -378,6 +410,33 @@ export class Matcher {
       }
       case "text":
         return t.name.toLowerCase().includes(c.text);
+      case "planned": {
+        const d = effectivePlanned(t, this.idx);
+        switch (c.op) {
+          case "any":
+            return !!d;
+          case "none":
+            return !d;
+          case "overdue":
+            // only where it was planned, not on each subtask that inherits it
+            return !!t.planned && t.planned < ctx.today && !isDone(t, s);
+          case "week":
+            return !!d && d >= ctx.today && d <= endOfWeek(ctx.today);
+        }
+        return dateMatches(d, c.op, c.date, ctx.today);
+      }
+      case "context": {
+        const x = effectiveContext(t, this.idx, ctx.groups ?? NO_GROUPS);
+        if (c.context === "none") return !x;
+        const want = c.context === "this" ? baseName(ctx.sourcePath) : c.context;
+        return !!x && x.toLowerCase() === want.toLowerCase();
+      }
+      case "estimate":
+        return c.op === "any" ? t.estimate != null : t.estimate == null;
+      case "unsorted":
+        return !effectiveProject(t, this.idx) || (t.estimate == null && !childrenOf(t, this.idx).some((k) => k.estimate != null));
+      case "review":
+        return dueForReview(t, s, ctx.today);
       case "not":
         return !this.cond(c.c, t);
       case "or":
@@ -392,6 +451,13 @@ function mentionsCompleted(c: Cond): boolean {
   if (c.k === "not") return mentionsCompleted(c.c);
   if (c.k === "or") return c.alts.some((conj) => conj.some(mentionsCompleted));
   return false;
+}
+
+/** Sunday of the week of `today` (weeks start on Monday). */
+export function endOfWeek(today: string): string {
+  const [y, m, d] = today.split("-").map(Number);
+  const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  return addDays(today, 6 - dow);
 }
 
 export function folderOf(path: string): string {
@@ -418,12 +484,20 @@ export function comparator(sort: SortKey, s: NextUpSettings): (a: TaskData, b: T
   const ord = (a: TaskData, b: TaskData) => (a.order ?? 0) - (b.order ?? 0);
   const due = (a: TaskData, b: TaskData) => (a.due ?? "9999").localeCompare(b.due ?? "9999");
   const name = (a: TaskData, b: TaskData) => a.name.localeCompare(b.name);
+  const plan = (a: TaskData, b: TaskData) => (a.planned ?? "9999").localeCompare(b.planned ?? "9999");
+  const est = (a: TaskData, b: TaskData) => (a.estimate ?? Infinity) - (b.estimate ?? Infinity) || 0;
+  const stale = (a: TaskData, b: TaskData) => lastTouched(a).localeCompare(lastTouched(b)) || a.mtime - b.mtime;
+  const proj = (a: TaskData, b: TaskData) => (a.project ?? "\uffff").localeCompare(b.project ?? "\uffff");
   const st = (a: TaskData, b: TaskData) => rank(a) - rank(b);
   const rank = (t: TaskData) => {
     const i = s.statuses.indexOf(t.status);
     return i < 0 ? s.statuses.length : i;
   };
   if (sort === "due") return (a, b) => due(a, b) || ord(a, b) || name(a, b);
+  if (sort === "planned") return (a, b) => plan(a, b) || ord(a, b) || name(a, b);
+  if (sort === "estimate") return (a, b) => est(a, b) || ord(a, b) || name(a, b);
+  if (sort === "stale") return (a, b) => stale(a, b) || name(a, b);
+  if (sort === "project") return (a, b) => proj(a, b) || ord(a, b) || name(a, b);
   if (sort === "name") return name;
   if (sort === "status") return (a, b) => st(a, b) || ord(a, b) || name(a, b);
   return (a, b) => ord(a, b) || due(a, b) || name(a, b);
@@ -472,6 +546,17 @@ export function countNodes(nodes: TreeNode[], s: NextUpSettings, openOnly = true
   return n;
 }
 
+/** Minutes left over the rows of a tree (each subtask once) and how many open leaves have no estimate. */
+export function treeRemaining(nodes: TreeNode[], idx: TaskIndex, s: NextUpSettings): { minutes: number; unestimated: number } {
+  return sumRemaining(nodes.map((n) => n.task), idx, s);
+}
+
+/** The single day a block is about (`planned: today`, `planned: on +1d`), for its load bar. */
+export function plannedDay(q: Query, today: string): string | undefined {
+  for (const c of q.conds) if (c.k === "planned" && c.op === "on") return resolveDate(c.date ?? "", today);
+  return undefined;
+}
+
 /* ---------- writing: what a new or moved task gets ---------- */
 
 export interface Prefill {
@@ -486,6 +571,9 @@ export interface Prefill {
   parentName?: string;
   /** basename of a person the task is about */
   person?: string;
+  /** ISO date (`planned: today`) */
+  planned?: string;
+  context?: string;
 }
 
 /** Fields that make a new task show up in the block: from its single-valued, top-level conditions. */
@@ -521,6 +609,12 @@ export function prefill(q: Query, ctx: Ctx): Prefill {
         if (c.person === "this") out.person = baseName(ctx.sourcePath);
         else if (c.person !== "none" && c.person !== "any") out.person = c.person;
         break;
+      case "planned":
+        if (c.op === "on") out.planned = resolveDate(c.date ?? "", ctx.today);
+        break;
+      case "context":
+        if (c.context !== "none") out.context = c.context === "this" ? baseName(ctx.sourcePath) : c.context;
+        break;
     }
   }
   return out;
@@ -534,6 +628,9 @@ export interface MovePatch {
   project?: string;
   person?: string;
   removePerson?: string;
+  /** a date, or null to unplan */
+  planned?: string | null;
+  context?: string;
 }
 
 /** Moving a task from block `from` to block `to`: drop the tags that put it in `from`, take what `to` prefills. */
@@ -543,13 +640,16 @@ export function movePatch(from: Query | undefined, to: Query, ctx: Ctx): MovePat
   for (const c of from?.conds ?? []) if (c.k === "tags") for (const t of c.tags) remove.add(t);
   if (to.conds.some((c) => c.k === "notags")) for (const t of boardSet(ctx.settings)) remove.add(t);
   for (const t of pre.tags) remove.delete(t);
+  // a day list plans the task that day; the unplanned list unplans it; other lists keep its day
+  const plan: Partial<MovePatch> = pre.planned ? { planned: pre.planned } : to.conds.some((c) => c.k === "planned" && c.op === "none") ? { planned: null } : {};
+  if (pre.context) plan.context = pre.context;
   if (pre.person) {
     // a person's list attaches the task to them: its board tags stay, the person it came from (if any) is swapped
     const old = from ? prefill(from, ctx).person : undefined;
     const swap = old && old.toLowerCase() !== pre.person.toLowerCase() ? { removePerson: old } : {};
-    return { addTags: pre.tags, removeTags: to.conds.some((c) => c.k === "tags" || c.k === "notags") ? [...remove] : [], status: pre.status, owner: pre.owner, project: pre.project, person: pre.person, ...swap };
+    return { addTags: pre.tags, removeTags: to.conds.some((c) => c.k === "tags" || c.k === "notags") ? [...remove] : [], status: pre.status, owner: pre.owner, project: pre.project, person: pre.person, ...swap, ...plan };
   }
-  return { addTags: pre.tags, removeTags: [...remove], status: pre.status, owner: pre.owner, project: pre.project };
+  return { addTags: pre.tags, removeTags: [...remove], status: pre.status, owner: pre.owner, project: pre.project, ...plan };
 }
 
 /** Apply a tag patch to a raw frontmatter tag list, keeping the spelling of the tags that stay. */
@@ -617,6 +717,14 @@ export function dueClass(t: TaskData, ctx: Ctx): string {
   if (!t.due || isDone(t, ctx.settings)) return "";
   if (t.due < ctx.today) return "is-overdue";
   if (t.due <= addDays(ctx.today, ctx.settings.dueSoonDays)) return "is-due-soon";
+  return "";
+}
+
+/** Planned before today and still open: a leftover. */
+export function plannedClass(t: TaskData, ctx: Ctx): string {
+  if (!t.planned || isDone(t, ctx.settings)) return "";
+  if (t.planned < ctx.today) return "is-overdue";
+  if (t.planned === ctx.today) return "is-today";
   return "";
 }
 

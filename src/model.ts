@@ -1,4 +1,5 @@
 import type { CaptureKind, NextUpSettings } from "./settingsTypes.ts";
+import { parseDuration } from "./duration.ts";
 
 /** A task as read from a note's frontmatter. Pure data, no Obsidian types. */
 export interface TaskData {
@@ -25,8 +26,52 @@ export interface TaskData {
   tags: string[];
   /** Position among siblings (smaller first). */
   order?: number;
+  /** Expected duration, in minutes. */
+  estimate?: number;
+  /** ISO date of the day it is planned for. */
+  planned?: string;
+  /** Basename of its context note, when set on the task itself (see `effectiveContext`). */
+  context?: string;
+  /** Basename of who it waits on. */
+  waitingOn?: string;
+  /** Actual time spent, in minutes. */
+  spent?: number;
+  /** ISO date it was last kept in the daily review. */
+  reviewed?: string;
   /** Last modification time (ms since epoch). */
   mtime: number;
+}
+
+/** A note of type project or context: what tasks are grouped by. */
+export interface GroupData {
+  path: string;
+  name: string;
+  kind: "project" | "context";
+  /** active · paused · done · dropped (projects); contexts are always active */
+  status: string;
+  owner?: string;
+  /** project: its default context */
+  context?: string;
+  aim?: string;
+  doneWhen?: string;
+  mtime: number;
+}
+
+export function groupFromFrontmatter(fm: Record<string, unknown>, path: string, mtime: number, kind: GroupData["kind"], s: NextUpSettings): GroupData {
+  const f = s.fields;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  return {
+    path,
+    name: path.replace(/\.md$/i, "").split("/").pop() ?? path,
+    kind,
+    status: (str(fm[f.status]) ?? "active").toLowerCase(),
+    // projects of older vaults name their lead
+    owner: str(fm[f.owner]) ?? str(fm.lead),
+    context: linkBasename(fm[f.context]),
+    aim: str(fm[f.aim]),
+    doneWhen: str(fm[f.doneWhen]),
+    mtime,
+  };
 }
 
 export interface TaskIndex {
@@ -80,6 +125,16 @@ export function isDone(t: TaskData, s: NextUpSettings): boolean {
 
 export function isOpen(t: TaskData, s: NextUpSettings): boolean {
   return !isDone(t, s);
+}
+
+/** Open but set aside (an idea): out of the lists, the sums and the reviews unless asked for. */
+export function isParked(t: TaskData, s: NextUpSettings): boolean {
+  return s.parkedStatuses.includes(t.status);
+}
+
+/** Open and not parked: something to do. */
+export function isActionable(t: TaskData, s: NextUpSettings): boolean {
+  return !isDone(t, s) && !isParked(t, s);
 }
 
 export function childrenOf(t: TaskData, idx: TaskIndex): TaskData[] {
@@ -247,8 +302,9 @@ export function taskFromFrontmatter(
   const f = s.fields;
   const name = path.replace(/\.md$/i, "").split("/").pop() ?? path;
   let status = typeof fm[f.status] === "string" ? (fm[f.status] as string).trim() : "";
-  // "someday" was a status before tags; a task with no board tag is "One day" now
-  if (!status || status === "someday") status = s.todoStatus;
+  if (!status) status = s.todoStatus;
+  // "someday" of older versions: set aside, like an idea
+  if (status === "someday") status = s.parkedStatuses[0] ?? s.todoStatus;
   return {
     path,
     name,
@@ -263,6 +319,12 @@ export function taskFromFrontmatter(
     people: linkList(fm[f.person]),
     tags: parseTags(fm[f.tags]),
     order: parseNumber(fm[f.order]),
+    estimate: parseDuration(fm[f.estimate]),
+    planned: parseDate(fm[f.planned]),
+    context: linkBasename(fm[f.context]),
+    waitingOn: linkBasename(fm[f.waitingOn]),
+    spent: parseDuration(fm[f.spent]),
+    reviewed: parseDate(fm[f.reviewed]),
     mtime,
   };
 }

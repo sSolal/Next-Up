@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkItems, isChecked, itemTitle, parseInboxQuery, promotedLine, replaceLine, toggledLine } from "../src/inbox.ts";
+import { checkItems, dismissedLine, ignoredByFrontmatter, isChecked, itemTitle, parseInboxQuery, promotedLine, replaceLine, toggledLine } from "../src/inbox.ts";
 
 const NOTE = [
   "---",
@@ -66,4 +66,18 @@ test("parseInboxQuery: options and errors", () => {
   assert.equal(d.done, "show");
   assert.equal(d.sort, "recent");
   assert.equal(d.folder, "");
+});
+
+test("ignoredByFrontmatter: kanban boards, nextup: ignore", () => {
+  const keys = ["kanban-plugin", "nextup"];
+  assert.equal(ignoredByFrontmatter({ "kanban-plugin": "board" }, keys), true);
+  assert.equal(ignoredByFrontmatter({ nextup: "ignore" }, keys), true);
+  assert.equal(ignoredByFrontmatter({ nextup: "inbox" }, keys), false);
+  assert.equal(ignoredByFrontmatter({ type: "meeting" }, keys), false);
+  assert.equal(ignoredByFrontmatter(undefined, keys), false);
+});
+
+test("dismissedLine marks the item [-]", () => {
+  const [item] = checkItems("- [ ] Maybe call Bob");
+  assert.equal(dismissedLine(item), "- [-] Maybe call Bob");
 });

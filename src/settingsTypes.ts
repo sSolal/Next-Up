@@ -12,6 +12,22 @@ export interface FieldNames {
   order: string;
   /** on tasks: the people a task is about (links) */
   person: string;
+  /** on tasks: expected duration (`45m`, `2h`) */
+  estimate: string;
+  /** on tasks: the day it is planned for */
+  planned: string;
+  /** on tasks and projects: the context (a note of type context) */
+  context: string;
+  /** on tasks: who we wait on, when the status is the waiting one */
+  waitingOn: string;
+  /** on tasks: actual time spent, asked when it is checked */
+  spent: string;
+  /** on tasks: last kept in the daily review */
+  reviewed: string;
+  /** on projects: why it matters (free text or a link) */
+  aim: string;
+  /** on projects: when it is finished */
+  doneWhen: string;
   /** on people */
   lastContact: string;
   nextContact: string;
@@ -94,6 +110,28 @@ export interface NextUpSettings {
   interactionFields: string[];
   /** Per-device fold state of tasks with subtasks: path → collapsed. */
   fold: Record<string, boolean>;
+  /** Value of `type` that marks a note as a project. */
+  projectType: string;
+  /** Value of `type` that marks a note as a context (a mindset: infra, writing…). */
+  contextType: string;
+  /** Statuses kept out of the open lists unless asked for (`status: idea`). */
+  parkedStatuses: string[];
+  /** Status of a task waiting on someone else. */
+  waitingStatus: string;
+  /** Focused hours in a day, for the load bars. Per device: each person has their own. */
+  hoursPerDay: number;
+  /** Hours for a given day (YYYY-MM-DD), overriding hoursPerDay. */
+  capacity: Record<string, number>;
+  /** Tasks shown by a review block each day. */
+  reviewPerDay: number;
+  /** A task kept in the review comes back after this many days. */
+  reviewAfterDays: number;
+  /** A project with no activity for this many days is stalled. */
+  stalledDays: number;
+  /** Ask how long it took when a task with an estimate is checked. */
+  askSpent: boolean;
+  /** Notes with one of these frontmatter keys are left out of inboxes (`kanban-plugin`, `nextup: ignore`). */
+  inboxIgnoreKeys: string[];
 }
 
 export const DEFAULT_KB: KbConfig = {
@@ -123,6 +161,14 @@ export const DEFAULT_FIELDS: FieldNames = {
   tags: "tags",
   order: "order",
   person: "person",
+  estimate: "estimate",
+  planned: "planned",
+  context: "context",
+  waitingOn: "waiting_on",
+  spent: "spent",
+  reviewed: "reviewed",
+  aim: "aim",
+  doneWhen: "done_when",
   lastContact: "last_contact",
   nextContact: "next_contact",
   summary: "summary",
@@ -138,8 +184,8 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   taskTemplate: "",
   homeNote: "Home.md",
   captureKinds: [],
-  boardTags: ["today", "tomorrow", "tonight", "this-week", "frog"],
-  statuses: ["todo", "doing", "review", "done", "dropped"],
+  boardTags: [],
+  statuses: ["todo", "doing", "waiting", "review", "idea", "done", "dropped"],
   doneStatuses: ["done", "dropped"],
   doingStatus: "doing",
   todoStatus: "todo",
@@ -153,6 +199,17 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   staleDays: 30,
   interactionFields: ["attendees", "person", "people"],
   fold: {},
+  projectType: "project",
+  contextType: "context",
+  parkedStatuses: ["idea"],
+  waitingStatus: "waiting",
+  hoursPerDay: 6,
+  capacity: {},
+  reviewPerDay: 5,
+  reviewAfterDays: 14,
+  stalledDays: 14,
+  askSpent: true,
+  inboxIgnoreKeys: ["kanban-plugin", "nextup"],
 };
 
 /** Keys of older versions (scoring, snooze, revisit…) dropped on load. */
@@ -176,8 +233,21 @@ export function mergeSettings(raw: unknown): NextUpSettings {
     fields,
     kb: { ...DEFAULT_KB, ...(data.kb ?? {}) },
     fold: data.fold && typeof data.fold === "object" ? data.fold : {},
+    parkedStatuses: Array.isArray(data.parkedStatuses) ? data.parkedStatuses : [...DEFAULT_SETTINGS.parkedStatuses],
+    capacity: data.capacity && typeof data.capacity === "object" ? data.capacity : {},
+    inboxIgnoreKeys: Array.isArray(data.inboxIgnoreKeys) ? data.inboxIgnoreKeys : [...DEFAULT_SETTINGS.inboxIgnoreKeys],
   };
   // every done status must be a status
   for (const d of out.doneStatuses) if (!out.statuses.includes(d)) out.statuses.push(d);
+  // the statuses this version relies on exist in vaults set up before it
+  for (const x of [out.waitingStatus, ...out.parkedStatuses]) {
+    if (x && !out.statuses.includes(x)) out.statuses.splice(Math.max(0, out.statuses.indexOf(out.doneStatuses[0] ?? "")), 0, x);
+  }
   return out;
+}
+
+/** Focused minutes available on `date`. */
+export function capacityMin(s: NextUpSettings, date: string): number {
+  const h = s.capacity[date];
+  return Math.round((typeof h === "number" && h >= 0 ? h : s.hoursPerDay) * 60);
 }

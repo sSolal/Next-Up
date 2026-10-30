@@ -31,7 +31,7 @@ export class NextUpSettingTab extends PluginSettingTab {
 
     this.text(containerEl, "Home note", "The page opened by the ribbon icon.", s.homeNote, (v) => (s.homeNote = v));
     this.text(containerEl, "Default task folder", "Where new tasks go when a block has no `folder:`. Tasks can live anywhere: any note with `type: task` is one.", s.tasksFolder, (v) => (s.tasksFolder = v));
-    this.text(containerEl, "Board tags", "Comma-separated tags that act as columns (today, this-week…). A task with none of them, on itself or its parents, is “One day” (`tags: none`).", s.boardTags.join(", "), (v) => (s.boardTags = list(v).map((x) => x.replace(/^#/, ""))));
+    this.text(containerEl, "Board tags", "Optional, comma-separated tags that act as columns. Days are better planned with `planned:` dates (they expire); leave empty unless you want columns.", s.boardTags.join(", "), (v) => (s.boardTags = list(v).map((x) => x.replace(/^#/, ""))));
     this.text(containerEl, "Statuses", "Comma-separated, in the order a click on the status cycles through them.", s.statuses.join(", "), (v) => (s.statuses = list(v).length ? list(v) : ["todo", "doing", "review", "done", "dropped"]));
     this.text(containerEl, "Done statuses", "Comma-separated. These count as finished (checked box).", s.doneStatuses.join(", "), (v) => (s.doneStatuses = list(v).length ? list(v) : ["done"]));
     this.text(containerEl, "Team note", "Note whose `team:` list names the team members (optional).", s.teamNote, (v) => (s.teamNote = v));
@@ -49,6 +49,20 @@ export class NextUpSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         });
       });
+
+    new Setting(containerEl).setName("Time and review").setDesc("Stored on this device only: each person has their own day.").setHeading();
+    this.number(containerEl, "Hours in a day", "Focused hours you plan for: the load bars compare planned estimates to it. A day of its own: click its bar.", s.hoursPerDay, (v) => (s.hoursPerDay = Math.max(0, v)));
+    new Setting(containerEl)
+      .setName("Ask how long it took")
+      .setDesc("When a task with an estimate is checked, ask for the time spent (`spent:`), to learn how good the estimates are.")
+      .addToggle((t) => t.setValue(s.askSpent).onChange(async (v) => {
+        s.askSpent = v;
+        await this.plugin.saveSettings();
+      }));
+    this.number(containerEl, "Review again after (days)", "A task kept in a review block (`view: review`) comes back after this many days.", s.reviewAfterDays, (v) => (s.reviewAfterDays = Math.max(1, Math.round(v))));
+    this.number(containerEl, "Stalled after (days)", "A project with no change for this many days is flagged as stalled.", s.stalledDays, (v) => (s.stalledDays = Math.max(1, Math.round(v))));
+    this.text(containerEl, "Parked statuses", "Comma-separated. Open, but kept out of lists and sums unless asked for (`status: idea`).", s.parkedStatuses.join(", "), (v) => (s.parkedStatuses = list(v)));
+    this.text(containerEl, "Inbox: ignore notes with", "Comma-separated frontmatter keys. Kanban boards (`kanban-plugin`) keep their cards as checkboxes; `nextup: ignore` hides any note.", s.inboxIgnoreKeys.join(", "), (v) => (s.inboxIgnoreKeys = list(v)));
 
     new Setting(containerEl).setName("People").setDesc("For `next-up-crm` blocks: any note with `type: person` is a person.").setHeading();
     this.text(containerEl, "Default people folder", "Where the add row of a `next-up-crm` block creates people when the block has no `folder:`.", s.peopleFolder, (v) => (s.peopleFolder = v));
@@ -68,6 +82,9 @@ export class NextUpSettingTab extends PluginSettingTab {
     this.text(containerEl, "Todo status", "Status of new tasks, and of a task unchecked.", s.todoStatus, (v) => (s.todoStatus = v || "todo"));
     this.text(containerEl, "Doing status", "", s.doingStatus, (v) => (s.doingStatus = v || "doing"));
     this.text(containerEl, "Task type value", "Value of the `type` field that marks a task note.", s.taskType, (v) => (s.taskType = v || "task"));
+    this.text(containerEl, "Project type value", "Value of the `type` field that marks a project note.", s.projectType, (v) => (s.projectType = v || "project"));
+    this.text(containerEl, "Context type value", "Value of the `type` field that marks a context note.", s.contextType, (v) => (s.contextType = v || "context"));
+    this.text(containerEl, "Waiting status", "Status of a task waiting on someone (`waiting_on:`).", s.waitingStatus, (v) => (s.waitingStatus = v || "waiting"));
 
     this.text(containerEl, "Person type value", "Value of the `type` field that marks a person note.", s.personType, (v) => (s.personType = v || "person"));
     this.text(containerEl, "Contact fields", "Comma-separated keys of dated notes (meetings, interviews) that link people. Such a note with a past `date` counts as a contact.", s.interactionFields.join(", "), (v) => (s.interactionFields = list(v)));
