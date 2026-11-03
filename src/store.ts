@@ -1,6 +1,6 @@
 import { App, Notice, TFile, TFolder, normalizePath } from "obsidian";
 import type { CaptureKind, NextUpSettings } from "./settingsTypes.ts";
-import { type GroupData, type TaskData, type TaskIndex, buildIndex, fillPlaceholders, groupFromFrontmatter, isoDate, linkList, safeFileName, taskFromFrontmatter } from "./model.ts";
+import { ARCHIVED, type GroupData, type TaskData, type TaskIndex, buildIndex, fillPlaceholders, groupFromFrontmatter, isoDate, linkList, safeFileName, taskFromFrontmatter } from "./model.ts";
 import { type GroupIndex, buildGroups, v04Patch } from "./plan.ts";
 import { type MovePatch, patchTags } from "./query.ts";
 import { formatDuration } from "./duration.ts";
@@ -22,7 +22,6 @@ export interface NewTaskSpec {
   /** minutes */
   estimate?: number;
   planned?: string;
-  context?: string;
 }
 
 const LINK_TARGET = /\[\[([^\]|#]+)/;
@@ -66,12 +65,11 @@ export class TaskStore {
     return fm[s.fields.type] === s.taskType;
   }
 
-  /** `project` or `context` when the note is one (templates excluded). */
-  groupKind(file: TFile): GroupData["kind"] | undefined {
-    if (file.extension !== "md" || this.isTemplate(file.path)) return undefined;
-    const t = this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings().fields.type];
+  /** A note with `type: project` (templates excluded). */
+  isProjectFile(file: TFile): boolean {
+    if (file.extension !== "md" || this.isTemplate(file.path)) return false;
     const s = this.settings();
-    return t === s.projectType ? "project" : t === s.contextType ? "context" : undefined;
+    return this.app.metadataCache.getFileCache(file)?.frontmatter?.[s.fields.type] === s.projectType;
   }
 
   loadGroups(): GroupIndex {
@@ -79,10 +77,9 @@ export class TaskStore {
     const s = this.settings();
     const list: GroupData[] = [];
     for (const f of this.app.vault.getMarkdownFiles()) {
-      const kind = this.groupKind(f);
-      if (!kind) continue;
+      if (!this.isProjectFile(f)) continue;
       const fm = (this.app.metadataCache.getFileCache(f)?.frontmatter ?? {}) as Record<string, unknown>;
-      list.push(groupFromFrontmatter(fm, f.path, f.stat.mtime, kind, s));
+      list.push(groupFromFrontmatter(fm, f.path, f.stat.mtime, s));
     }
     this.groupCache = buildGroups(list);
     return this.groupCache;
@@ -142,18 +139,29 @@ export class TaskStore {
     return [...set].sort((a, b) => a.localeCompare(b));
   }
 
-  /** Project names: active project notes first, then the other names tasks use. */
-  projects(): string[] {
-    const active = [...this.loadGroups().projects.values()].filter((g) => g.status === "active").map((g) => g.name).sort();
+  /**
+   * Project names: active project notes first, then the others still going (paused…) and the names tasks use.
+   * Archived, done and dropped ones are left out; with `archived`, the archived ones come last.
+   */
+  projects(archived = false): string[] {
+    const groups = [...this.loadGroups().projects.values()];
+    const status = (n: string) => this.loadGroups().projects.get(n.toLowerCase())?.status;
+    const active = groups.filter((g) => g.status === "active").map((g) => g.name).sort();
     const set = new Set<string>();
-    for (const g of this.loadGroups().projects.values()) if (g.status !== "active" && !["done", "dropped"].includes(g.status)) set.add(g.name);
-    for (const t of this.loadIndex().tasks) if (t.project) set.add(t.project);
+    for (const g of groups) if (g.status !== "active" && ![ARCHIVED, "done", "dropped"].includes(g.status)) set.add(g.name);
+    for (const t of this.loadIndex().tasks) if (t.project && ![ARCHIVED, "done", "dropped"].includes(status(t.project) ?? "")) set.add(t.project);
     for (const a of active) set.delete(a);
-    return [...active, ...[...set].sort()];
+    return [...active, ...[...set].sort(), ...(archived ? this.archivedProjects() : [])];
   }
 
-  contexts(): string[] {
-    return [...this.loadGroups().contexts.values()].map((g) => g.name).sort();
+  /** Archived project notes, by name. */
+  archivedProjects(): string[] {
+    return [...this.loadGroups().projects.values()].filter((g) => g.status === ARCHIVED).map((g) => g.name).sort();
+  }
+
+  /** Archive a project note, or bring it back as active. */
+  async setProjectStatus(file: TFile, status: string): Promise<void> {
+    await this.update(file, { [this.settings().fields.status]: status });
   }
 
   /* ---------- writes ---------- */
@@ -208,17 +216,16 @@ export class TaskStore {
     await this.update(file, { [this.settings().fields.project]: project ? this.linkByName(project, file.path) : undefined });
   }
 
-  async setContext(file: TFile, context: string | undefined): Promise<void> {
-    await this.update(file, { [this.settings().fields.context]: context ? this.linkByName(context, file.path) : undefined });
-  }
-
-  /** Waiting on someone (status and who), or `undefined` to stop waiting. */
+  /** Waiting on someone (who, and the waiting status when the vault has one), or `undefined` to stop waiting. */
   async setWaiting(file: TFile, who: string | undefined): Promise<void> {
     const s = this.settings();
-    await this.update(file, {
-      [s.fields.status]: who === undefined ? s.todoStatus : s.waitingStatus,
-      [s.fields.waitingOn]: who ? this.linkByName(who, file.path) : undefined,
-    });
+    const patch: Record<string, unknown> = { [s.fields.waitingOn]: who ? this.linkByName(who, file.path) : undefined };
+    if (s.statuses.includes(s.waitingStatus)) {
+      const cur = this.app.metadataCache.getFileCache(file)?.frontmatter?.[s.fields.status];
+      if (who !== undefined) patch[s.fields.status] = s.waitingStatus;
+      else if (cur === s.waitingStatus) patch[s.fields.status] = s.todoStatus;
+    }
+    await this.update(file, patch);
   }
 
   /** Kept in the daily review: it leaves the review for `reviewAfterDays`. */
@@ -246,15 +253,15 @@ export class TaskStore {
     });
   }
 
-  /** Apply what moving to another block means (tags, and status/owner/project when the block fixes them). */
+  /** Apply what moving to another block means (tags, and status/owner/project/day when the block fixes them). */
   async applyMove(file: TFile, p: MovePatch): Promise<void> {
     const f = this.settings().fields;
     if (p.addTags.length || p.removeTags.length) await this.setTags(file, p.addTags, p.removeTags);
     const patch: Record<string, unknown> = {};
-    if (p.owner) patch[f.owner] = p.owner;
-    if (p.project) patch[f.project] = this.linkByName(p.project, file.path);
+    // a value sets the field, null clears it, undefined leaves it
+    if (p.owner !== undefined) patch[f.owner] = p.owner ?? undefined;
+    if (p.project !== undefined) patch[f.project] = p.project ? this.linkByName(p.project, file.path) : undefined;
     if (p.planned !== undefined) patch[f.planned] = p.planned ?? undefined;
-    if (p.context) patch[f.context] = this.linkByName(p.context, file.path);
     if (Object.keys(patch).length) await this.update(file, patch);
     if (p.person) await this.addPerson(file, p.person, p.removePerson);
     if (p.status) await this.setStatus(file, p.status);
@@ -315,7 +322,6 @@ export class TaskStore {
       if (spec.order != null) fm[f.order] = spec.order;
       if (spec.estimate != null) fm[f.estimate] = formatDuration(spec.estimate);
       if (spec.planned) fm[f.planned] = spec.planned;
-      if (spec.context) fm[f.context] = this.linkByName(spec.context, path);
     });
     this.invalidate();
     return file;

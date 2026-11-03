@@ -30,8 +30,6 @@ export interface TaskData {
   estimate?: number;
   /** ISO date of the day it is planned for. */
   planned?: string;
-  /** Basename of its context note, when set on the task itself (see `effectiveContext`). */
-  context?: string;
   /** Basename of who it waits on. */
   waitingOn?: string;
   /** Actual time spent, in minutes. */
@@ -42,32 +40,30 @@ export interface TaskData {
   mtime: number;
 }
 
-/** A note of type project or context: what tasks are grouped by. */
+/** A note of type project: what tasks are grouped by. */
 export interface GroupData {
   path: string;
   name: string;
-  kind: "project" | "context";
-  /** active · paused · done · dropped (projects); contexts are always active */
+  /** active · paused · archived · done · dropped */
   status: string;
   owner?: string;
-  /** project: its default context */
-  context?: string;
   aim?: string;
   doneWhen?: string;
   mtime: number;
 }
 
-export function groupFromFrontmatter(fm: Record<string, unknown>, path: string, mtime: number, kind: GroupData["kind"], s: NextUpSettings): GroupData {
+/** Archived: out of the way (columns, lists), but still there to pick. */
+export const ARCHIVED = "archived";
+
+export function groupFromFrontmatter(fm: Record<string, unknown>, path: string, mtime: number, s: NextUpSettings): GroupData {
   const f = s.fields;
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   return {
     path,
     name: path.replace(/\.md$/i, "").split("/").pop() ?? path,
-    kind,
     status: (str(fm[f.status]) ?? "active").toLowerCase(),
     // projects of older vaults name their lead
     owner: str(fm[f.owner]) ?? str(fm.lead),
-    context: linkBasename(fm[f.context]),
     aim: str(fm[f.aim]),
     doneWhen: str(fm[f.doneWhen]),
     mtime,
@@ -321,7 +317,6 @@ export function taskFromFrontmatter(
     order: parseNumber(fm[f.order]),
     estimate: parseDuration(fm[f.estimate]),
     planned: parseDate(fm[f.planned]),
-    context: linkBasename(fm[f.context]),
     waitingOn: linkBasename(fm[f.waitingOn]),
     spent: parseDuration(fm[f.spent]),
     reviewed: parseDate(fm[f.reviewed]),

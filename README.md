@@ -6,8 +6,9 @@ An Obsidian plugin that turns notes into a simple, composable task manager, for 
 - **Blocks are filters.** A `next-up` block lists the tasks that match a few `key: value` lines, like a tiny Dataview. Compose a page from several blocks: *Today*, *This week*, *Late & due soon*…
 - **Days are dates, statuses are progress.** `planned: 2026-10-31` says *when* (and expires: yesterday's unfinished tasks come back as *leftovers*); `status: doing` says *where it is*.
 - **Time is visible.** `estimate: 45m` on tasks; blocks sum what is left, a day's list shows its load against your hours, projects show what remains.
-- **Projects and contexts.** A project (`type: project`) is a finishable piece of work with an aim; a context (`type: context`) is a mindset with its playbook (infra, writing…). Tasks inherit the context of their project.
+- **Projects.** A project (`type: project`) is what a task moves forward, with an aim. Subtasks inherit it. Archive the ones you are not working on: they leave the board and the lists but stay to pick.
 - **Nested and ordered.** Subtasks show inside their parent (collapsible). Drag to reorder, drop onto a task to nest, drag to another block to move it there.
+- **A board of everything.** *Open board* shows every task as a Kanban: by day (Late · Today · Later · Not planned · Done), by status, project or person, filtered by who and by project.
 - **Add in place.** Each block has an add row that creates a task already matching the block. Paste a markdown list to create many at once, indentation becoming subtasks.
 
 ## Task schema
@@ -15,10 +16,9 @@ An Obsidian plugin that turns notes into a simple, composable task manager, for 
 ```yaml
 ---
 type: task
-status: todo          # todo · doing · waiting · review · idea · done · dropped (configurable)
+status: todo          # todo · doing · idea · done · dropped (configurable; waiting, review… still read)
 estimate: 1h30        # 15m, 45m, 2h, 1d (= 8h); a bare number is hours
 planned: 2026-10-31   # the day it is planned for; inherited by subtasks
-context: "[[Infra]]"  # optional: inherited from the project, then the parent
 waiting_on: "[[Charlotte]]" # with status: waiting
 spent: 2h             # asked when a task with an estimate is checked
 reviewed: 2026-10-30  # set by Keep in a review block
@@ -40,20 +40,42 @@ Typing a title ending with a duration (`Write the post 1h30`, `Call Bob 15m`) in
 
 **From 0.3:** run *Migrate tasks to v0.4*. `today`/`tonight` tags become `planned:` the day the note was last edited, `tomorrow` the day after (so stale ones show up as leftovers to replan or drop), `this-week` and `frog` are removed, `someday` becomes `idea`. It shows the counts and asks first.
 
-## Project and context notes
+## Project notes
 
 ```yaml
 ---
-type: project          # or: type: context
-status: active         # active · paused · done · dropped (projects)
-context: "[[Infra]]"   # default context of its tasks
+type: project
+status: active         # active · paused · archived · done · dropped
 aim: Get a first PoC signed   # why it matters: free text or a link
-done_when: The demo is online and EDF has seen it
-owner: Solal
+done_when: The demo is online and the client has seen it
+owner: Ada
 ---
 ```
 
-A task belongs to a project through `project:` (on itself or a parent). A context note holds what you need to have in mind to work in it (where code goes, the process, tools), followed by a `next-up` block with `context: this`.
+A task belongs to a project through `project:` (on itself or a parent). A project note can hold what you need to have in mind to work on it, followed by a `next-up` block with `project: this`.
+
+**Archived** projects are set aside without being finished: no column on the board, no card in `next-up-projects` (unless `status: archived`), and at the bottom of project pickers, under *Archived*, so they can still be chosen. Archive one from its card's `⋯` or with *Archive / unarchive this project* in its note.
+
+Contexts (`type: context`, `context:`) are gone since 0.5: make them projects. A `context:` filter now shows an error.
+
+## Board
+
+*Open board* (ribbon ▦ or the command) opens the whole list as a Kanban in a tab of its own. Every card is a regular row: check it, click its chips, add subtasks, drag it.
+
+**Columns.** The switch at the top splits the board:
+
+| mode | columns | dropping a card there |
+|---|---|---|
+| **When** | **Late** (red, first) · **Today** (with its load bar) · **Later** (by date) · **Not planned** (folded) · **Done** | plans it today · asks for the day · unplans it · checks it. A finished card dropped on a day opens again. Nothing is dropped on Late: move a late card to a day, or unplan it |
+| **Status** | To-do · Open (in progress, `doing`) · Ideas · Done | sets the status |
+| **Project** | each active project (and any other one tasks use; archived ones only when picked in the filter) · No project | sets or clears `project:` |
+| **Person** | each owner · Unassigned | assigns or unassigns |
+
+**Late** is any open task planned before today (a leftover), or past its due date with no day planned. Whatever the mode, the header shows how many there are (click: see them by day), and in the other modes late cards come first in their column. When mode treats ideas as any task: their day decides. Other statuses (waiting, review…) sit in To-do with their pill.
+
+**Filters**, remembered per device: **Everyone · Me · each owner · Unassigned** (several at once; Me + Unassigned by default), a **Project** picker (archived projects in a section at the bottom, and *No project*), and a name filter. Tasks added in a column match it: one person selected makes them the owner, one project their project. The fold of each column is remembered too; a folded column still takes cards.
+
+The simplified statuses (`todo, doing, idea, done, dropped`) are the default. Older vaults keep their list; *Use the simplified statuses* in the settings switches.
 
 ## Blocks
 
@@ -80,7 +102,6 @@ One option per line; all filters must match.
 | `person: this` | tasks about this person (or `[[Someone]]`, `any`, `none`) |
 | `text: invoice` | name contains |
 | `planned: today` | planned that day (inherited by subtasks) · `on +1d` · `before`/`after` · `week` (today to Sunday) · `overdue` (planned before today, still open: leftovers) · `any` · `none` |
-| `context: this` | in this context (own, its project's, or a parent's) · `[[Infra]]` · `none` |
 | `estimate: none` | no estimate · `any` |
 | `unsorted: yes` | no project, or no estimate |
 | `review: due` | not kept in a review for *Review again after* days |
@@ -128,10 +149,10 @@ A personal board, one block per column: `tags: this-week` + `max: 5`, `tags: fro
 
 ### Rows
 
-- **Checkbox**: done / not done (then, if it had an estimate, *how long did it take?*: skip it freely). **Title**: opens the note (hover for a preview); below it, its project · context. **Status pill** (doing, waiting, review): click for the next status. **☀ chip**: planned day, click to replan; red when it is a leftover. **Time chip**: estimate, or what is left on its subtasks; `?` when there is none, click to set it. **Due chip**: click to change; orange when due soon, red when late. **⛓**: waiting on a dependency. **2/5**: subtasks done.
+- **Checkbox**: done / not done (then, if it had an estimate, *how long did it take?*: skip it freely). **Title**: opens the note (hover for a preview); below it, its project. **Status pill** (doing, waiting, review): click for the next status. **☀ chip**: planned day, click to replan; red when it is a leftover. **Time chip**: estimate, or what is left on its subtasks; `?` when there is none, click to set it. **Due chip**: click to change; orange when due soon, red when late. **⛓**: waiting on a dependency. **2/5**: subtasks done.
 - **Header**: open tasks and the time left. In a block about one day (`planned: today`), a load bar `3h20 / 6h`, red above your hours; click it to change that day's hours.
-- **Hover**: `+` adds a subtask right there; `⋯` (or right-click) opens Plan (today, tomorrow, in 2 days, next Monday, a date, unplan), Estimate, Status, Waiting on, To ideas, Project, Context, Due, Tags, Add subtask, Nest under, Un-nest, Move up/down, Depends on, Assign, Rename, Drop.
-- **Drag** by the grip: top/bottom edge of a row = put before/after (in `sort: order` blocks); middle = nest inside; anywhere in another block = move there. Moving removes the tags that put the task in the old block and adds what the new block fixes (its day for `planned:` blocks, `planned: none` unplans, its first tag, and `status`/`owner`/`project`/`context` if the block pins one). On touch screens, use *Move to…* and *Nest under…*.
+- **Hover**: `+` adds a subtask right there; `⋯` (or right-click) opens Plan (today, tomorrow, in 2 days, next Monday, a date, unplan), Estimate, Status, Waiting on, To ideas, Project, Due, Tags, Add subtask, Nest under, Un-nest, Move up/down, Depends on, Assign, Rename, Drop.
+- **Drag** by the grip: top/bottom edge of a row = put before/after (in `sort: order` blocks); middle = nest inside; anywhere in another block = move there. Moving removes the tags that put the task in the old block and adds what the new block fixes (its day for `planned:` blocks, `planned: none` unplans, its first tag, and `status`/`owner`/`project` if the block pins one). On touch screens, use *Move to…* and *Nest under…*.
 - **Add row**: Enter creates a task with the block's tags, owner, status, folder, project and parent, and keeps focus for the next one. Paste several lines (e.g. an old checklist) to create them all; indented lines become subtasks, `[x]` lines are created done.
 
 ## Inbox
@@ -145,7 +166,7 @@ folder: Calls
 ```
 ````
 
-Items are grouped by note, most recently edited first, with the note's age (orange after a week). **Checkbox**: checks it in the note. **Text**: opens the note at that line. **→** (on hover): *Sort this*: one dialog with the title, project, context (from the project), time, day and who, then **Task** (Enter), **Idea** (a parked task) or **Dismiss**. A task or idea replaces the line with `- [[The task]]`, so it leaves the inbox and the note links to it. **×**: dismiss right away (`- [-]`). Task, project, context and person notes, templates, the block's own note, Kanban boards (`kanban-plugin`) and notes with `nextup: ignore` are left out.
+Items are grouped by note, most recently edited first, with the note's age (orange after a week). **Checkbox**: checks it in the note. **Text**: opens the note at that line. **→** (on hover): *Sort this*: one dialog with the title, project, time, day and who, then **Task** (Enter), **Idea** (a parked task) or **Dismiss**. A task or idea replaces the line with `- [[The task]]`, so it leaves the inbox and the note links to it. **×**: dismiss right away (`- [-]`). Task, project and person notes, templates, the block's own note, Kanban boards (`kanban-plugin`) and notes with `nextup: ignore` are left out.
 
 | option | meaning |
 |---|---|
@@ -156,7 +177,7 @@ Items are grouped by note, most recently edited first, with the note's age (oran
 | `text: deck` | item contains |
 | `to: Work/Tasks` | where *Make it a task* creates tasks (default: the default task folder) |
 
-## Projects and contexts
+## Projects
 
 ````markdown
 ```next-up-projects
@@ -166,11 +187,10 @@ group: aim
 ```
 ````
 
-One card per project note (or `type: context`): its aim and context, **Next:** the next action (doing first, then the soonest planned, then the list order; a **Today** button plans it), the time left and open tasks (`3h20+ · 6`, `+` when some have no estimate), when it last moved, and what's done this week. Flags ask for a decision: **nothing left: close it?**, **almost done** (two tasks or three hours left: finish it to take it off the table), **stalled** (no change for *Stalled after* days). Cards needing a decision come first. The chevron unfolds the tasks as a regular list; `⋯`: status (active, paused, done, dropped) and default context. More than 5 active projects turns the count red.
+One card per project note: its aim, **Next:** the next action (doing first, then the soonest planned, then the list order; a **Today** button plans it), the time left and open tasks (`3h20+ · 6`, `+` when some have no estimate), when it last moved, and what's done this week. Flags ask for a decision: **nothing left: close it?**, **almost done** (two tasks or three hours left: finish it to take it off the table), **stalled** (no change for *Stalled after* days). Cards needing a decision come first. The chevron unfolds the tasks as a regular list; `⋯`: status (active, paused, archived, done, dropped). More than 5 active projects turns the count red.
 
 | option | meaning |
 |---|---|
-| `type: context` | contexts instead of projects |
 | `status: active, paused` | project statuses shown (default `active`; `any`) |
 | `owner: me` | projects led by me (or by no one) and only my tasks inside |
 | `group: aim` | a heading per aim |
@@ -285,7 +305,7 @@ seam for agent loops: progress reports, drift tracking, forgotten projects.
 
 ## Commands
 
-*Open home*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Plan this task…*, *Plan this task today*, *Estimate this task…*, *Set my hours for today…* / *for tomorrow…*, *Move this task to a board column…* (when board tags are set), *Toggle a tag on this task*, *Migrate tasks to v0.4…*, *In touch with this person today…*, *Next contact with this person…*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
+*Open home*, *Open board*, *Archive / unarchive this project*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Plan this task…*, *Plan this task today*, *Estimate this task…*, *Set my hours for today…* / *for tomorrow…*, *Move this task to a board column…* (when board tags are set), *Toggle a tag on this task*, *Migrate tasks to v0.4…*, *In touch with this person today…*, *Next contact with this person…*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
 
 ## Settings
 

@@ -7,7 +7,7 @@ import { CrmBlock } from "./crmView.ts";
 import { InboxBlock } from "./inboxView.ts";
 import { ProjectsBlock, WeekBlock } from "./projectsView.ts";
 import { editCapacity } from "./listView.ts";
-import { addDays, isoDate } from "./model.ts";
+import { ARCHIVED, addDays, isoDate } from "./model.ts";
 import { PeopleStore } from "./peopleStore.ts";
 import { NEVER } from "./crm.ts";
 import { CaptureModal, type CapturePreset, ContactModal, EstimateModal, StringSuggestModal } from "./modals.ts";
@@ -17,6 +17,7 @@ import { KbService } from "./kb/service.ts";
 import { ObsidianNoteSource, requestUrlTransport } from "./kb/kbStore.ts";
 import { AskVaultView, VIEW_TYPE_ASK } from "./kb/askView.ts";
 import { AskPromptModal, DigestModal } from "./kb/digestModal.ts";
+import { BoardView, VIEW_TYPE_BOARD } from "./boardView.ts";
 
 export default class NextUpPlugin extends Plugin {
   settings: NextUpSettings = DEFAULT_SETTINGS;
@@ -38,6 +39,7 @@ export default class NextUpPlugin extends Plugin {
     this.addSettingTab(new NextUpSettingTab(this.app, this));
 
     this.registerView(VIEW_TYPE_ASK, (leaf) => new AskVaultView(leaf, this));
+    this.registerView(VIEW_TYPE_BOARD, (leaf) => new BoardView(leaf, this));
     const invalidate = () => {
       this.store.invalidate();
       this.people.invalidate();
@@ -87,10 +89,12 @@ export default class NextUpPlugin extends Plugin {
     });
 
     this.addRibbonIcon("list-checks", "Open home", () => this.openHome());
+    this.addRibbonIcon("kanban", "Open board", () => void this.openBoard());
     this.addRibbonIcon("plus-circle", "Capture", () => this.openCapture());
 
     // id kept from the "Todo" days so existing hotkeys still work
     this.addCommand({ id: "open-todo", name: "Open home", callback: () => this.openHome() });
+    this.addCommand({ id: "open-board", name: "Open board", callback: () => void this.openBoard() });
     this.addCommand({ id: "capture", name: "Capture…", callback: () => this.openCapture() });
     this.addCommand({ id: "new-task", name: "New task", callback: () => this.openCapture({ task: true }) });
     this.addCommand({
@@ -185,6 +189,20 @@ export default class NextUpPlugin extends Plugin {
       }),
     });
     this.addCommand({
+      id: "archive-project",
+      name: "Archive / unarchive this project",
+      checkCallback: (checking) => {
+        const f = this.app.workspace.getActiveFile();
+        if (!(f instanceof TFile) || !this.store.isProjectFile(f)) return false;
+        if (!checking) {
+          const archived = this.store.loadGroups().projects.get(f.basename.toLowerCase())?.status === ARCHIVED;
+          void this.store.setProjectStatus(f, archived ? "active" : ARCHIVED);
+          new Notice(archived ? `Active again: ${f.basename}` : `Archived: ${f.basename}`);
+        }
+        return true;
+      },
+    });
+    this.addCommand({
       id: "log-contact",
       name: "In touch with this person today…",
       checkCallback: (checking) => this.withActivePerson(checking, (f, name, next) =>
@@ -271,6 +289,14 @@ export default class NextUpPlugin extends Plugin {
   openCapture(preset: CapturePreset = {}) {
     const kinds = captureKindsFor(this.settings.captureKinds, this.settings.tasksFolder);
     new CaptureModal(this.app, this.store, kinds, { ...preset, owner: preset.owner ?? this.settings.me, project: preset.project ?? this.activeTask()?.project }).open();
+  }
+
+  /** The board in a tab of its own (the open one, if any). */
+  async openBoard() {
+    const ws = this.app.workspace;
+    const leaf = ws.getLeavesOfType(VIEW_TYPE_BOARD)[0] ?? ws.getLeaf("tab");
+    if (leaf.view.getViewType() !== VIEW_TYPE_BOARD) await leaf.setViewState({ type: VIEW_TYPE_BOARD, active: true });
+    await ws.revealLeaf(leaf);
   }
 
   async openHome() {

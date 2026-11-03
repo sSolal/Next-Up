@@ -3,7 +3,7 @@ import type NextUpPlugin from "./main.ts";
 import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, descendants, isActionable, isBlocked, blockers, isDone, parentOf } from "./model.ts";
 import { capacityMin } from "./settingsTypes.ts";
 import { formatDuration, splitEstimate } from "./duration.ts";
-import { effectiveContext, effectiveProject, remaining } from "./plan.ts";
+import { effectiveProject, remaining } from "./plan.ts";
 import {
   type Ctx,
   type Query,
@@ -73,6 +73,16 @@ export class ListView {
     this.q = q;
   }
 
+  /** The board changes its columns' queries when its filters change; the list keeps its open input. */
+  setQuery(q: Query) {
+    this.q = q;
+  }
+
+  /** Whether a card dragged from `drag` may be dropped in this list. */
+  accepts(drag: DragState): boolean {
+    return drag.blockId === this.block.id || this.q.accepts !== false;
+  }
+
   private get s() {
     return this.plugin.settings;
   }
@@ -93,11 +103,11 @@ export class ListView {
 
   private draw(el: HTMLElement) {
     const q = this.q;
-    this.ctx = { ...this.block.ctx(), groups: this.store.loadGroups() };
+    this.ctx = this.block.ctx();
     this.idx = this.store.loadIndex();
     this.matcher = new Matcher(this.idx, this.ctx);
     const matched = this.idx.tasks.filter((t) => this.matcher.matches(t, q));
-    this.roots = buildTree(matched, this.idx, q, this.s);
+    this.roots = buildTree(matched, this.idx, q, this.s, this.ctx.today);
     this.shown = new Set(matched.map((t) => t.path));
 
     el.addClass("nu-list");
@@ -107,7 +117,8 @@ export class ListView {
     if (q.title || q.max || day) {
       const head = el.createDiv({ cls: "nu-head" });
       if (q.title) head.createSpan({ cls: "nu-title", text: q.title });
-      const n = countNodes(this.roots, this.s, true, !q.max);
+      // a list of finished tasks counts them
+      const n = countNodes(this.roots, this.s, q.done !== "show", !q.max);
       const count = head.createSpan({ cls: "nu-count", text: q.max ? `${n}/${q.max}` : String(n) });
       if (q.max && n > q.max) count.addClass("is-over");
       const sum = treeRemaining(this.roots, this.idx, this.s);
@@ -136,7 +147,8 @@ export class ListView {
   /** Dropping on the block but not on a row: move here, last. Wired once per host. */
   static wireBlockDrop(el: HTMLElement, plugin: NextUpPlugin, view: () => ListView | null) {
     el.addEventListener("dragover", (ev) => {
-      if (!plugin.drag || !view()) return;
+      const v = view();
+      if (!plugin.drag || !v || !v.accepts(plugin.drag)) return;
       ev.preventDefault();
       el.addClass("is-drop-target");
     });
@@ -147,7 +159,7 @@ export class ListView {
       el.removeClass("is-drop-target");
       const drag = plugin.drag;
       const v = view();
-      if (!drag || !v) return;
+      if (!drag || !v || !v.accepts(drag)) return;
       ev.preventDefault();
       ev.stopPropagation();
       void v.dropAtEnd(drag);
@@ -256,7 +268,7 @@ export class ListView {
   /** Waiting on, planned day (unless the block is that day), time left (or a nudge to estimate). */
   private renderTimeChips(chips: HTMLElement, t: TaskData, done: boolean) {
     const s = this.s;
-    if (t.status === s.waitingStatus && t.waitingOn) chips.createSpan({ cls: "nu-chip nu-waiting", text: `⏳ ${t.waitingOn}` });
+    if (t.waitingOn && !done) chips.createSpan({ cls: "nu-chip nu-waiting", text: `⏳ ${t.waitingOn}` });
     if (t.planned && !plannedDay(this.q, this.ctx.today)) {
       const chip = chips.createSpan({ cls: `nu-chip nu-planned ${plannedClass(t, this.ctx)}`, attr: { "aria-label": `Planned ${t.planned} (click to replan)` } });
       setIcon(chip.createSpan({ cls: "nu-chip-icon" }), "sun");
@@ -280,18 +292,13 @@ export class ListView {
     if (!fromKids) est.addEventListener("click", () => this.pickEstimate(t));
   }
 
-  /** Small grey line under the title: project · context, when the block is not already about them. */
+  /** Small grey line under the title: its project, when the block is not already about it. */
   private renderGroupChip(main: HTMLElement, t: TaskData) {
-    const parts: string[] = [];
-    const byProject = this.q.conds.some((c) => c.k === "project");
-    const byContext = this.q.conds.some((c) => c.k === "context");
+    if (this.q.conds.some((c) => c.k === "project")) return;
     const project = effectiveProject(t, this.idx);
-    const context = effectiveContext(t, this.idx, this.ctx.groups!);
-    if (project && !byProject) parts.push(project);
-    if (context && !byContext && context !== project) parts.push(context);
-    if (!parts.length) return;
+    if (!project) return;
     main.addClass("has-sub");
-    main.createDiv({ cls: "nu-sub", text: parts.join(" · ") });
+    main.createDiv({ cls: "nu-sub", text: project });
   }
 
   /** Review: plan today · keep (seen, back in a while) · idea · drop. Leftovers: today · tomorrow · unplan · drop. */
@@ -456,8 +463,8 @@ export class ListView {
           parentPath: under,
           order: o,
           // like board tags, a planned day is inherited by subtasks
-          planned: top && !parent ? pre.planned : undefined,
-          context: top ? pre.context : undefined,
+          // a list that asks for the day (the board's Later) starts new tasks tomorrow
+          planned: top && !parent ? pre.planned ?? (this.q.askDate ? addDays(this.ctx.today, 1) : undefined) : undefined,
         });
         stack.push(file.path);
       }
@@ -494,7 +501,8 @@ export class ListView {
 
   private pickProject(t: TaskData, f: TFile, review = false) {
     const none = "— no project —";
-    new StringSuggestModal(this.plugin.app, [...this.store.projects(), none], (p) => {
+    // archived projects last: still there to pick
+    new StringSuggestModal(this.plugin.app, [...this.store.projects(true), none], (p) => {
       void (async () => {
         await this.store.setProject(f, p === none ? undefined : p);
         if (review) await this.store.markReviewed(f);
@@ -502,14 +510,9 @@ export class ListView {
     }, "Project (or type a new name)").open();
   }
 
-  private pickContext(t: TaskData, f: TFile) {
-    const none = "— from the project —";
-    new StringSuggestModal(this.plugin.app, [...this.store.contexts(), none], (c) => void this.store.setContext(f, c === none ? undefined : c), "Context", false).open();
-  }
-
   private pickWaiting(t: TaskData, f: TFile) {
     const stop = "— not waiting any more —";
-    const choices = [...this.store.teamMembers(this.idx), ...(t.status === this.s.waitingStatus ? [stop] : [])];
+    const choices = [...this.store.teamMembers(this.idx), ...(t.waitingOn || t.status === this.s.waitingStatus ? [stop] : [])];
     new StringSuggestModal(this.plugin.app, choices, (who) => void this.store.setWaiting(f, who === stop ? undefined : who), "Waiting on whom? (or type a name)").open();
   }
 
@@ -560,7 +563,6 @@ export class ListView {
     menu.addItem((i) => i.setTitle("Waiting on…").setIcon("hourglass").onClick(() => this.pickWaiting(t, f)));
     if (!s.parkedStatuses.includes(t.status) && s.parkedStatuses[0]) menu.addItem((i) => i.setTitle(`To ${s.parkedStatuses[0]}s`).setIcon("lightbulb").onClick(() => void store.setStatus(f, s.parkedStatuses[0])));
     menu.addItem((i) => i.setTitle("Project…").setIcon("folder-kanban").onClick(() => this.pickProject(t, f)));
-    menu.addItem((i) => i.setTitle("Context…").setIcon("brain").onClick(() => this.pickContext(t, f)));
     menu.addItem((i) => i.setTitle("Due…").setIcon("calendar").onClick(() => this.pickDue(t)));
     if (s.boardTags.length) menu.addItem((i) => i.setTitle("Move to…").setIcon("arrow-right-left").onClick(() => this.moveTo(t, f)));
     menu.addItem((i) => i.setTitle("Tags…").setIcon("tag").onClick(() => this.toggleTag(t, f)));
@@ -689,6 +691,10 @@ export class ListView {
   /** Top quarter: before · bottom quarter: after · middle: inside. Reordering only in `sort: order` blocks. */
   private zone(ev: DragEvent, row: HTMLElement, drag: DragState, target: TaskData): Zone | null {
     if (drag.path === target.path) return null;
+    const fromElsewhere = drag.blockId !== this.block.id;
+    if (fromElsewhere && !this.accepts(drag)) return null;
+    // on a board, a card brought onto a sorted column joins the column (handled by the column's own drop)
+    if (fromElsewhere && this.q.board && this.q.sort !== "order") return null;
     const dragged = this.idx.byPath.get(drag.path);
     if (dragged && descendants(dragged, this.idx).has(target.path)) return null;
     const r = row.getBoundingClientRect();
@@ -701,7 +707,19 @@ export class ListView {
   private async moveBetweenBlocks(drag: DragState, f: TFile, nesting = false) {
     if (drag.blockId === this.block.id) return;
     const patch = movePatch(drag.query, this.q, this.ctx);
-    await this.store.applyMove(f, nesting ? { ...patch, addTags: [] } : patch);
+    if (nesting) patch.addTags = [];
+    const dragged = this.idx.byPath.get(drag.path);
+    if (patch.reopen && !patch.status && dragged && isDone(dragged, this.s)) patch.status = this.s.todoStatus;
+    if (this.q.askDate) {
+      // the day is asked; nothing moves if the dialog is left
+      const today = this.ctx.today;
+      const initial = dragged?.planned && dragged.planned > today ? dragged.planned : addDays(today, 1);
+      new DateModal(this.plugin.app, `Plan “${f.basename}” on`, initial, (d) => {
+        if (d) void this.store.applyMove(f, { ...patch, planned: d });
+      }).open();
+      return;
+    }
+    await this.store.applyMove(f, patch);
   }
 
   private async dropOnRow(drag: DragState, node: TreeNode, siblings: TreeNode[], index: number, zone: Zone) {

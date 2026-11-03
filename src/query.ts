@@ -1,6 +1,7 @@
 import type { NextUpSettings } from "./settingsTypes.ts";
 import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, isDone, isParked, linkBasename, normTag, parentOf, parseDate } from "./model.ts";
-import { type GroupIndex, NO_GROUPS, dueForReview, effectiveContext, effectivePlanned, effectiveProject, lastTouched, sumRemaining } from "./plan.ts";
+import { dueForReview, effectivePlanned, effectiveProject, lastTouched, sumRemaining } from "./plan.ts";
+import { type BoardMode, columnOf, isLate } from "./columns.ts";
 
 /* ---------- block query: parsing ---------- */
 
@@ -25,19 +26,19 @@ export type Cond =
   | { k: "person"; person: string }
   /** the day it is planned for (inherited from ancestors); `overdue` = before today and still open */
   | { k: "planned"; op: "overdue" | "week" | "before" | "after" | "on" | "any" | "none"; date?: string }
-  /** a context name, `this` or `none` (inherited from the project, then the ancestors) */
-  | { k: "context"; context: string }
   | { k: "estimate"; op: "any" | "none" }
   /** no project or no estimate: still to sort */
   | { k: "unsorted" }
   /** not kept in a review for `reviewAfterDays` */
   | { k: "review" }
   | { k: "text"; text: string }
+  /** in this column of the board (built by the board, never parsed); done tasks only in a `done` column */
+  | { k: "column"; mode: BoardMode; id: string }
   | { k: "not"; c: Cond }
   | { k: "or"; alts: Cond[][] };
 
-export type SortKey = "order" | "due" | "name" | "status" | "planned" | "estimate" | "stale" | "project";
-const SORT_KEYS: SortKey[] = ["order", "due", "name", "status", "planned", "estimate", "stale", "project"];
+export type SortKey = "order" | "due" | "name" | "status" | "planned" | "estimate" | "stale" | "project" | "urgency" | "completed";
+const SORT_KEYS: SortKey[] = ["order", "due", "name", "status", "planned", "estimate", "stale", "project", "urgency", "completed"];
 
 export interface Query {
   /** list · graph · review (keep / plan / drop buttons) · leftovers (replan / drop buttons) */
@@ -61,6 +62,15 @@ export interface Query {
   /** graph: include done tasks */
   includeDone: boolean;
   errors: string[];
+  /* set by the board on its columns */
+  /** a board column: a card dropped on a row moves to the column instead of nesting (unless sorted by order) */
+  board?: boolean;
+  /** false: cards from other lists cannot be dropped here */
+  accepts?: boolean;
+  /** what a card dropped here (or added here) gets, over what the conditions give; null clears */
+  dropPatch?: Partial<MovePatch>;
+  /** a card dropped here asks for its day */
+  askDate?: boolean;
 }
 
 /** What a query is evaluated against. */
@@ -70,8 +80,6 @@ export interface Ctx {
   /** path of the note holding the block */
   sourcePath: string;
   settings: NextUpSettings;
-  /** project and context notes, for inherited contexts */
-  groups?: GroupIndex;
 }
 
 const TRUE = /^(true|yes|1|on)$/i;
@@ -168,7 +176,7 @@ export function parseCond(key: string, value: string): Cond | string {
       return typeof d === "string" ? d : { k: "planned", ...d };
     }
     case "context":
-      return { k: "context", context: lv === "this" || lv === "none" ? lv : linkBasename(v) ?? v };
+      return "context: contexts are gone, use project";
     case "estimate":
       if (lv === "any" || lv === "none") return { k: "estimate", op: lv };
       return "estimate: use any or none";
@@ -332,7 +340,7 @@ export class Matcher {
         if (!this.openOrRecent(t, q)) return false;
         continue;
       }
-      if (c.k === "status" || mentionsCompleted(c)) status = true;
+      if (c.k === "status" || c.k === "column" || mentionsCompleted(c)) status = true;
       if (!this.cond(c, t)) return false;
     }
     return status || this.openOrRecent(t, q);
@@ -425,18 +433,14 @@ export class Matcher {
         }
         return dateMatches(d, c.op, c.date, ctx.today);
       }
-      case "context": {
-        const x = effectiveContext(t, this.idx, ctx.groups ?? NO_GROUPS);
-        if (c.context === "none") return !x;
-        const want = c.context === "this" ? baseName(ctx.sourcePath) : c.context;
-        return !!x && x.toLowerCase() === want.toLowerCase();
-      }
       case "estimate":
         return c.op === "any" ? t.estimate != null : t.estimate == null;
       case "unsorted":
         return !effectiveProject(t, this.idx) || (t.estimate == null && !childrenOf(t, this.idx).some((k) => k.estimate != null));
       case "review":
         return dueForReview(t, s, ctx.today);
+      case "column":
+        return columnOf(t, c.mode, this.idx, s, ctx.today) === c.id;
       case "not":
         return !this.cond(c.c, t);
       case "or":
@@ -480,7 +484,8 @@ export interface TreeNode {
   progress?: { done: number; total: number };
 }
 
-export function comparator(sort: SortKey, s: NextUpSettings): (a: TaskData, b: TaskData) => number {
+/** `env` is needed by `urgency` (late first); without it, urgency sorts by order. */
+export function comparator(sort: SortKey, s: NextUpSettings, env?: { idx: TaskIndex; today: string }): (a: TaskData, b: TaskData) => number {
   const ord = (a: TaskData, b: TaskData) => (a.order ?? 0) - (b.order ?? 0);
   const due = (a: TaskData, b: TaskData) => (a.due ?? "9999").localeCompare(b.due ?? "9999");
   const name = (a: TaskData, b: TaskData) => a.name.localeCompare(b.name);
@@ -493,6 +498,15 @@ export function comparator(sort: SortKey, s: NextUpSettings): (a: TaskData, b: T
     const i = s.statuses.indexOf(t.status);
     return i < 0 ? s.statuses.length : i;
   };
+  if (sort === "urgency" && env) {
+    const { idx, today } = env;
+    const soon = addDays(today, s.dueSoonDays);
+    const urg = (t: TaskData) =>
+      isLate(t, idx, s, today) ? 0 : (t.due && t.due <= soon) || effectivePlanned(t, idx) === today ? 1 : t.status === s.doingStatus ? 2 : 3;
+    const when = (t: TaskData) => [t.planned, t.due].filter((x): x is string => !!x).sort()[0] ?? "9999";
+    return (a, b) => urg(a) - urg(b) || when(a).localeCompare(when(b)) || ord(a, b) || name(a, b);
+  }
+  if (sort === "completed") return (a, b) => (b.completed ?? "").localeCompare(a.completed ?? "") || name(a, b);
   if (sort === "due") return (a, b) => due(a, b) || ord(a, b) || name(a, b);
   if (sort === "planned") return (a, b) => plan(a, b) || ord(a, b) || name(a, b);
   if (sort === "estimate") return (a, b) => est(a, b) || ord(a, b) || name(a, b);
@@ -504,7 +518,7 @@ export function comparator(sort: SortKey, s: NextUpSettings): (a: TaskData, b: T
 }
 
 /** Every matching task, placed under its nearest matching ancestor; the others are roots with breadcrumbs. */
-export function buildTree(matched: TaskData[], idx: TaskIndex, q: Query, s: NextUpSettings): TreeNode[] {
+export function buildTree(matched: TaskData[], idx: TaskIndex, q: Query, s: NextUpSettings, today?: string): TreeNode[] {
   const shown = new Set(matched.map((t) => t.path));
   const nodes = new Map<string, TreeNode>();
   for (const t of matched) {
@@ -527,7 +541,7 @@ export function buildTree(matched: TaskData[], idx: TaskIndex, q: Query, s: Next
       roots.push(node);
     }
   }
-  const cmp = comparator(q.sort, s);
+  const cmp = comparator(q.sort, s, today ? { idx, today } : undefined);
   const sortRec = (list: TreeNode[]) => {
     list.sort((a, b) => cmp(a.task, b.task));
     for (const n of list) sortRec(n.children);
@@ -573,7 +587,6 @@ export interface Prefill {
   person?: string;
   /** ISO date (`planned: today`) */
   planned?: string;
-  context?: string;
 }
 
 /** Fields that make a new task show up in the block: from its single-valued, top-level conditions. */
@@ -612,10 +625,14 @@ export function prefill(q: Query, ctx: Ctx): Prefill {
       case "planned":
         if (c.op === "on") out.planned = resolveDate(c.date ?? "", ctx.today);
         break;
-      case "context":
-        if (c.context !== "none") out.context = c.context === "this" ? baseName(ctx.sourcePath) : c.context;
-        break;
     }
+  }
+  const d = q.dropPatch;
+  if (d) {
+    if (d.status) out.status = d.status;
+    if (d.owner !== undefined) out.owner = d.owner ?? undefined;
+    if (d.project !== undefined) out.project = d.project ?? undefined;
+    if (d.planned !== undefined) out.planned = d.planned ?? undefined;
   }
   return out;
 }
@@ -624,13 +641,16 @@ export interface MovePatch {
   addTags: string[];
   removeTags: string[];
   status?: string;
-  owner?: string;
-  project?: string;
+  /** a name, or null to unassign */
+  owner?: string | null;
+  /** a project, or null for none */
+  project?: string | null;
   person?: string;
   removePerson?: string;
   /** a date, or null to unplan */
   planned?: string | null;
-  context?: string;
+  /** a finished task moved here opens again */
+  reopen?: boolean;
 }
 
 /** Moving a task from block `from` to block `to`: drop the tags that put it in `from`, take what `to` prefills. */
@@ -642,14 +662,13 @@ export function movePatch(from: Query | undefined, to: Query, ctx: Ctx): MovePat
   for (const t of pre.tags) remove.delete(t);
   // a day list plans the task that day; the unplanned list unplans it; other lists keep its day
   const plan: Partial<MovePatch> = pre.planned ? { planned: pre.planned } : to.conds.some((c) => c.k === "planned" && c.op === "none") ? { planned: null } : {};
-  if (pre.context) plan.context = pre.context;
   if (pre.person) {
     // a person's list attaches the task to them: its board tags stay, the person it came from (if any) is swapped
     const old = from ? prefill(from, ctx).person : undefined;
     const swap = old && old.toLowerCase() !== pre.person.toLowerCase() ? { removePerson: old } : {};
     return { addTags: pre.tags, removeTags: to.conds.some((c) => c.k === "tags" || c.k === "notags") ? [...remove] : [], status: pre.status, owner: pre.owner, project: pre.project, person: pre.person, ...swap, ...plan };
   }
-  return { addTags: pre.tags, removeTags: [...remove], status: pre.status, owner: pre.owner, project: pre.project, ...plan };
+  return { addTags: pre.tags, removeTags: [...remove], status: pre.status, owner: pre.owner, project: pre.project, ...plan, ...to.dropPatch };
 }
 
 /** Apply a tag patch to a raw frontmatter tag list, keeping the spelling of the tags that stay. */

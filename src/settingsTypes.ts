@@ -16,8 +16,6 @@ export interface FieldNames {
   estimate: string;
   /** on tasks: the day it is planned for */
   planned: string;
-  /** on tasks and projects: the context (a note of type context) */
-  context: string;
   /** on tasks: who we wait on, when the status is the waiting one */
   waitingOn: string;
   /** on tasks: actual time spent, asked when it is checked */
@@ -63,6 +61,18 @@ export interface KbConfig {
   pinnedSections: string[];
   /** Order of the `quarter` values on tasks, first to last. */
   quarterOrder: string[];
+}
+
+/** The board tab: how it is split and filtered. Per device. */
+export interface BoardPrefs {
+  /** when · status · project · person */
+  mode: "when" | "status" | "project" | "person";
+  /** owners shown: names, `me`, `none` (unassigned); empty = everyone */
+  owners: string[];
+  /** projects shown (names, `none`); empty = all */
+  projects: string[];
+  /** `mode:column` → folded, when it differs from the column's default */
+  folded: Record<string, boolean>;
 }
 
 /** A kind of note the Capture dialog can create. `name` is a file name pattern with {{title}} and {{date}}. */
@@ -112,8 +122,6 @@ export interface NextUpSettings {
   fold: Record<string, boolean>;
   /** Value of `type` that marks a note as a project. */
   projectType: string;
-  /** Value of `type` that marks a note as a context (a mindset: infra, writing…). */
-  contextType: string;
   /** Statuses kept out of the open lists unless asked for (`status: idea`). */
   parkedStatuses: string[];
   /** Status of a task waiting on someone else. */
@@ -132,6 +140,7 @@ export interface NextUpSettings {
   askSpent: boolean;
   /** Notes with one of these frontmatter keys are left out of inboxes (`kanban-plugin`, `nextup: ignore`). */
   inboxIgnoreKeys: string[];
+  board: BoardPrefs;
 }
 
 export const DEFAULT_KB: KbConfig = {
@@ -163,7 +172,6 @@ export const DEFAULT_FIELDS: FieldNames = {
   person: "person",
   estimate: "estimate",
   planned: "planned",
-  context: "context",
   waitingOn: "waiting_on",
   spent: "spent",
   reviewed: "reviewed",
@@ -177,6 +185,11 @@ export const DEFAULT_FIELDS: FieldNames = {
   contact: "contact",
 };
 
+/** The short status list: to do, in progress (shown as Open on the board), one day, finished, abandoned. */
+export const SIMPLE_STATUSES = ["todo", "doing", "idea", "done", "dropped"];
+
+export const DEFAULT_BOARD: BoardPrefs = { mode: "when", owners: ["me", "none"], projects: [], folded: {} };
+
 export const DEFAULT_SETTINGS: NextUpSettings = {
   me: "",
   tasksFolder: "Tasks",
@@ -185,7 +198,7 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   homeNote: "Home.md",
   captureKinds: [],
   boardTags: [],
-  statuses: ["todo", "doing", "waiting", "review", "idea", "done", "dropped"],
+  statuses: [...SIMPLE_STATUSES],
   doneStatuses: ["done", "dropped"],
   doingStatus: "doing",
   todoStatus: "todo",
@@ -200,7 +213,6 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   interactionFields: ["attendees", "person", "people"],
   fold: {},
   projectType: "project",
-  contextType: "context",
   parkedStatuses: ["idea"],
   waitingStatus: "waiting",
   hoursPerDay: 6,
@@ -210,10 +222,11 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   stalledDays: 14,
   askSpent: true,
   inboxIgnoreKeys: ["kanban-plugin", "nextup"],
+  board: { ...DEFAULT_BOARD },
 };
 
 /** Keys of older versions (scoring, snooze, revisit…) dropped on load. */
-const REMOVED_KEYS = ["todoNote", "snoozeDays", "nowMin", "revisitDays", "weights", "somedayStatus"];
+const REMOVED_KEYS = ["todoNote", "snoozeDays", "nowMin", "revisitDays", "weights", "somedayStatus", "contextType"];
 
 /** Merge stored data over the defaults, migrating renamed keys and dropping removed ones. */
 export function mergeSettings(raw: unknown): NextUpSettings {
@@ -236,14 +249,27 @@ export function mergeSettings(raw: unknown): NextUpSettings {
     parkedStatuses: Array.isArray(data.parkedStatuses) ? data.parkedStatuses : [...DEFAULT_SETTINGS.parkedStatuses],
     capacity: data.capacity && typeof data.capacity === "object" ? data.capacity : {},
     inboxIgnoreKeys: Array.isArray(data.inboxIgnoreKeys) ? data.inboxIgnoreKeys : [...DEFAULT_SETTINGS.inboxIgnoreKeys],
+    board: mergeBoard(data.board),
   };
   // every done status must be a status
   for (const d of out.doneStatuses) if (!out.statuses.includes(d)) out.statuses.push(d);
-  // the statuses this version relies on exist in vaults set up before it
-  for (const x of [out.waitingStatus, ...out.parkedStatuses]) {
+  // the parked statuses exist in vaults set up before them
+  for (const x of out.parkedStatuses) {
     if (x && !out.statuses.includes(x)) out.statuses.splice(Math.max(0, out.statuses.indexOf(out.doneStatuses[0] ?? "")), 0, x);
   }
   return out;
+}
+
+function mergeBoard(raw: unknown): BoardPrefs {
+  const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const strs = (v: unknown, d: string[]) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [...d]);
+  const modes: BoardPrefs["mode"][] = ["when", "status", "project", "person"];
+  return {
+    mode: modes.includes(b.mode as BoardPrefs["mode"]) ? (b.mode as BoardPrefs["mode"]) : DEFAULT_BOARD.mode,
+    owners: strs(b.owners, DEFAULT_BOARD.owners),
+    projects: strs(b.projects, []),
+    folded: b.folded && typeof b.folded === "object" ? (b.folded as Record<string, boolean>) : {},
+  };
 }
 
 /** Focused minutes available on `date`. */

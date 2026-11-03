@@ -1,7 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { OllamaError } from "./kb/ollama.ts";
 import type NextUpPlugin from "./main.ts";
-import { DEFAULT_FIELDS, type FieldNames } from "./settingsTypes.ts";
+import { DEFAULT_FIELDS, type FieldNames, SIMPLE_STATUSES } from "./settingsTypes.ts";
 import { formatCaptureKinds, parseCaptureKinds } from "./model.ts";
 
 export class NextUpSettingTab extends PluginSettingTab {
@@ -32,7 +32,21 @@ export class NextUpSettingTab extends PluginSettingTab {
     this.text(containerEl, "Home note", "The page opened by the ribbon icon.", s.homeNote, (v) => (s.homeNote = v));
     this.text(containerEl, "Default task folder", "Where new tasks go when a block has no `folder:`. Tasks can live anywhere: any note with `type: task` is one.", s.tasksFolder, (v) => (s.tasksFolder = v));
     this.text(containerEl, "Board tags", "Optional, comma-separated tags that act as columns. Days are better planned with `planned:` dates (they expire); leave empty unless you want columns.", s.boardTags.join(", "), (v) => (s.boardTags = list(v).map((x) => x.replace(/^#/, ""))));
-    this.text(containerEl, "Statuses", "Comma-separated, in the order a click on the status cycles through them.", s.statuses.join(", "), (v) => (s.statuses = list(v).length ? list(v) : ["todo", "doing", "review", "done", "dropped"]));
+    this.text(containerEl, "Statuses", "Comma-separated, in the order a click on the status cycles through them.", s.statuses.join(", "), (v) => (s.statuses = list(v).length ? list(v) : [...SIMPLE_STATUSES]));
+    if (s.statuses.join(",") !== SIMPLE_STATUSES.join(",")) {
+      new Setting(containerEl)
+        .setName("Use the simplified statuses")
+        .setDesc(`${SIMPLE_STATUSES.join(", ")}: the board's To-do, Open, Ideas and Done (and dropped). Tasks keep their status; others (waiting, review…) show as To-do with their pill.`)
+        .addButton((b) => b.setButtonText("Simplify").onClick(async () => {
+          s.statuses = [...SIMPLE_STATUSES];
+          s.doneStatuses = ["done", "dropped"];
+          s.todoStatus = "todo";
+          s.doingStatus = "doing";
+          s.parkedStatuses = ["idea"];
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+    }
     this.text(containerEl, "Done statuses", "Comma-separated. These count as finished (checked box).", s.doneStatuses.join(", "), (v) => (s.doneStatuses = list(v).length ? list(v) : ["done"]));
     this.text(containerEl, "Team note", "Note whose `team:` list names the team members (optional).", s.teamNote, (v) => (s.teamNote = v));
     this.text(containerEl, "Task template", "Note used as the body of new tasks (optional). Its frontmatter is replaced.", s.taskTemplate, (v) => (s.taskTemplate = v));
@@ -83,7 +97,6 @@ export class NextUpSettingTab extends PluginSettingTab {
     this.text(containerEl, "Doing status", "", s.doingStatus, (v) => (s.doingStatus = v || "doing"));
     this.text(containerEl, "Task type value", "Value of the `type` field that marks a task note.", s.taskType, (v) => (s.taskType = v || "task"));
     this.text(containerEl, "Project type value", "Value of the `type` field that marks a project note.", s.projectType, (v) => (s.projectType = v || "project"));
-    this.text(containerEl, "Context type value", "Value of the `type` field that marks a context note.", s.contextType, (v) => (s.contextType = v || "context"));
     this.text(containerEl, "Waiting status", "Status of a task waiting on someone (`waiting_on:`).", s.waitingStatus, (v) => (s.waitingStatus = v || "waiting"));
 
     this.text(containerEl, "Person type value", "Value of the `type` field that marks a person note.", s.personType, (v) => (s.personType = v || "person"));

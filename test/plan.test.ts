@@ -3,18 +3,18 @@ import assert from "node:assert/strict";
 import { type GroupData, buildIndex } from "../src/model.ts";
 import { DEFAULT_SETTINGS } from "../src/settingsTypes.ts";
 import { type Ctx, Matcher, buildTree, endOfWeek, movePatch, parseQuery, plannedDay, prefill, treeRemaining } from "../src/query.ts";
-import { buildGroups, dayLoad, effectiveContext, groupStats, leftovers, parseGroupsQuery, remaining, sumRemaining, v04Patch, weekLoad } from "../src/plan.ts";
+import { buildGroups, dayLoad, groupStats, leftovers, parseGroupsQuery, remaining, sumRemaining, v04Patch, weekLoad } from "../src/plan.ts";
 import { mk } from "./model.test.ts";
 
 const S = { ...DEFAULT_SETTINGS, hoursPerDay: 6, capacity: { "2026-10-31": 4 } };
 const TODAY = "2026-10-30"; // a Friday
 
-function group(name: string, kind: GroupData["kind"], extra: Partial<GroupData> = {}): GroupData {
-  return { path: `Projects/${name}.md`, name, kind, status: "active", mtime: Date.UTC(2026, 9, 1), ...extra };
+function group(name: string, extra: Partial<GroupData> = {}): GroupData {
+  return { path: `Projects/${name}.md`, name, status: "active", mtime: Date.UTC(2026, 9, 1), ...extra };
 }
 
-const groups = buildGroups([group("Server", "project", { context: "Infra" }), group("Blog", "project", { context: "Research" }), group("Infra", "context")]);
-const ctx: Ctx = { today: TODAY, me: "Solal", sourcePath: "Whale/Execution/Contexts/Infra.md", settings: S, groups };
+const groups = buildGroups([group("Server"), group("Blog")]);
+const ctx: Ctx = { today: TODAY, me: "Ada", sourcePath: "Work/Projects/Server.md", settings: S };
 
 function run(source: string, tasks: ReturnType<typeof mk>[], c: Ctx = ctx) {
   const q = parseQuery(source);
@@ -53,19 +53,12 @@ test("ideas are parked: out of open lists, shown with status: idea", () => {
   assert.deepEqual(run("status: waiting", tasks).matched, ["Wait"]);
 });
 
-test("context: own, from the project, from the ancestors; this and none", () => {
-  const tasks = [
-    mk("Own", { context: "Infra" }),
-    mk("ByProject", { project: "Server" }),
-    mk("Child", { parent: "ByProject" }),
-    mk("Elsewhere", { project: "Blog" }),
-    mk("Loose"),
-  ];
-  const idx = buildIndex(tasks);
-  assert.equal(effectiveContext(idx.byName.get("Child")!, idx, groups), "Infra");
-  assert.deepEqual(run("context: this", tasks).matched, ["Own", "ByProject", "Child"]);
-  assert.deepEqual(run("context: none", tasks).matched, ["Loose"]);
+test("project: own or inherited from the ancestors; this and none; contexts are gone", () => {
+  const tasks = [mk("ByProject", { project: "Server" }), mk("Child", { parent: "ByProject" }), mk("Elsewhere", { project: "Blog" }), mk("Loose")];
+  assert.deepEqual(run("project: this", tasks).matched, ["ByProject", "Child"]);
+  assert.deepEqual(run("project: none", tasks).matched, ["Loose"]);
   assert.deepEqual(run("project: Server", tasks).matched, ["ByProject", "Child"]);
+  assert.match(parseQuery("context: this").errors[0], /contexts are gone/);
 });
 
 test("estimate and unsorted filters", () => {
@@ -103,29 +96,29 @@ test("remaining: subtasks' estimates replace the parent's, done and parked count
 
 test("day and week load against capacity; leftovers", () => {
   const tasks = [
-    mk("T1", { planned: TODAY, estimate: 120, owner: "Solal" }),
+    mk("T1", { planned: TODAY, estimate: 120, owner: "Ada" }),
     mk("T2", { planned: TODAY, estimate: 60 }),
-    mk("T3", { planned: TODAY, estimate: 60, owner: "Smeety" }),
-    mk("Tm", { planned: "2026-10-31", estimate: 300, owner: "Solal" }),
-    mk("Late", { planned: "2026-10-28", owner: "Solal" }),
+    mk("T3", { planned: TODAY, estimate: 60, owner: "Bob" }),
+    mk("Tm", { planned: "2026-10-31", estimate: 300, owner: "Ada" }),
+    mk("Late", { planned: "2026-10-28", owner: "Ada" }),
   ];
   const idx = buildIndex(tasks);
-  assert.deepEqual(dayLoad(idx, S, TODAY, "Solal"), { date: TODAY, minutes: 180, capacity: 360, tasks: 2, unestimated: 0 });
-  const week = weekLoad(idx, S, TODAY, "Solal", 3);
+  assert.deepEqual(dayLoad(idx, S, TODAY, "Ada"), { date: TODAY, minutes: 180, capacity: 360, tasks: 2, unestimated: 0 });
+  const week = weekLoad(idx, S, TODAY, "Ada", 3);
   assert.deepEqual(week.map((d) => [d.date, d.minutes, d.capacity]), [[TODAY, 180, 360], ["2026-10-31", 300, 240], ["2026-11-01", 0, 360]]);
-  assert.deepEqual(leftovers(idx, S, TODAY, "Solal").map((t) => t.name), ["Late"]);
+  assert.deepEqual(leftovers(idx, S, TODAY, "Ada").map((t) => t.name), ["Late"]);
 });
 
-test("prefill and move: a day list plans, the unplanned list unplans, a context list sets the context", () => {
+test("prefill and move: a day list plans, the unplanned list unplans, a project list sets the project", () => {
   const today = parseQuery("planned: today");
   const tomorrow = parseQuery("planned: tomorrow");
   const unplanned = parseQuery("planned: none");
-  const infra = parseQuery("context: this");
+  const server = parseQuery("project: this");
   assert.equal(prefill(today, ctx).planned, TODAY);
   assert.equal(movePatch(today, tomorrow, ctx).planned, "2026-10-31");
   assert.equal(movePatch(today, unplanned, ctx).planned, null);
-  assert.equal(movePatch(today, infra, ctx).planned, undefined);
-  assert.equal(movePatch(today, infra, ctx).context, "Infra");
+  assert.equal(movePatch(today, server, ctx).planned, undefined);
+  assert.equal(movePatch(today, server, ctx).project, "Server");
 });
 
 test("group stats: remaining, next action, almost done, stalled, empty", () => {
@@ -136,7 +129,7 @@ test("group stats: remaining, next action, almost done, stalled, empty", () => {
     mk("Waiting", { project: "Blog", status: "waiting", mtime: Date.UTC(2026, 8, 1) }),
   ];
   const idx = buildIndex(tasks);
-  const server = groupStats(groups.projects.get("server")!, idx, groups, S, TODAY);
+  const server = groupStats(groups.projects.get("server")!, idx, S, TODAY);
   assert.equal(server.open, 2);
   assert.equal(server.minutes, 90);
   assert.equal(server.next?.name, "Doing");
@@ -144,12 +137,10 @@ test("group stats: remaining, next action, almost done, stalled, empty", () => {
   assert.equal(server.doneThisWeek, 1);
   assert.equal(server.almostDone, true);
   assert.equal(server.stalled, false);
-  const blog = groupStats(groups.projects.get("blog")!, idx, groups, S, TODAY);
+  const blog = groupStats(groups.projects.get("blog")!, idx, S, TODAY);
   assert.equal(blog.next, undefined, "waiting tasks are not a next action");
   assert.equal(blog.stalled, true);
-  const infra = groupStats(groups.contexts.get("infra")!, idx, groups, S, TODAY);
-  assert.equal(infra.open, 2);
-  const empty = groupStats(group("Nothing", "project"), idx, groups, S, TODAY);
+  const empty = groupStats(group("Nothing"), idx, S, TODAY);
   assert.equal(empty.empty, true);
 });
 
@@ -163,8 +154,9 @@ test("v0.4 migration: day tags become a planned date from the last edit, other b
   assert.equal(v04Patch({ status: "todo" }, "2026-10-26", S), null);
 });
 
-test("parseGroupsQuery: kind, statuses, owner, group by aim, days, errors", () => {
-  const q = parseGroupsQuery("type: context\nstatus: any\nowner: me\ngroup: aim\ndays: 5\nfoo: bar");
-  assert.deepEqual([q.kind, q.statuses, q.owner, q.byAim, q.days, q.errors.length], ["context", [], "me", true, 5, 1]);
+test("parseGroupsQuery: statuses, owner, group by aim, days, errors; type: context is gone", () => {
+  const q = parseGroupsQuery("type: project\nstatus: any\nowner: me\ngroup: aim\ndays: 5\nfoo: bar");
+  assert.deepEqual([q.statuses, q.owner, q.byAim, q.days, q.errors.length], [[], "me", true, 5, 1]);
+  assert.match(parseGroupsQuery("type: context").errors[0], /projects now/);
   assert.deepEqual(parseGroupsQuery("").statuses, ["active"]);
 });

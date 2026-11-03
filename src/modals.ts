@@ -141,6 +141,7 @@ export class CaptureModal extends Modal {
         if (this.project && !projects.includes(this.project)) projects.unshift(this.project);
         d.addOption("", "— none —");
         for (const p of projects) d.addOption(p, p);
+        projectOptions(d.selectEl, this.store.archivedProjects().filter((p) => !projects.includes(p)));
         d.setValue(this.project ?? "");
         d.onChange((v) => (this.project = v || undefined));
       });
@@ -467,13 +468,20 @@ export class CapacityModal extends Modal {
   }
 }
 
+/** Archived projects at the bottom of a project dropdown, under their own heading. */
+export function projectOptions(select: HTMLSelectElement, archived: string[]) {
+  if (!archived.length) return;
+  const group = select.createEl("optgroup", { attr: { label: "Archived" } });
+  for (const p of archived) group.createEl("option", { text: p, value: p });
+}
+
 export type TriageResult = { action: "task" | "idea"; spec: NewTaskSpec } | { action: "dismiss" };
 
 /** Remembered between triages: most items in a row belong together. */
-const lastTriage: { project?: string; context?: string } = {};
+const lastTriage: { project?: string } = {};
 
 /**
- * One inbox item, sorted in one go: a task (project, context, estimate, day, owner), an idea for later,
+ * One inbox item, sorted in one go: a task (project, estimate, day, owner), an idea for later,
  * or dismissed. Enter makes the task.
  */
 export class TriageModal extends Modal {
@@ -489,7 +497,7 @@ export class TriageModal extends Modal {
     this.me = defaults.owner ?? "";
     this.onDone = onDone;
     const project = defaults.project ?? lastTriage.project;
-    this.spec = { title: text, project, context: project ? store.loadGroups().projects.get(project.toLowerCase())?.context ?? lastTriage.context : lastTriage.context, owner: defaults.owner || undefined };
+    this.spec = { title: text, project, owner: defaults.owner || undefined };
   }
 
   onOpen() {
@@ -507,30 +515,14 @@ export class TriageModal extends Modal {
       this.finish("task");
     });
 
-    let ctxDrop: { setValue(v: string): unknown } | undefined;
     new Setting(contentEl).setName("Project").addDropdown((d) => {
       const list = this.store.projects();
       if (this.spec.project && !list.includes(this.spec.project)) list.unshift(this.spec.project);
       d.addOption("", "— none —");
       for (const p of list) d.addOption(p, p);
+      projectOptions(d.selectEl, this.store.archivedProjects().filter((p) => !list.includes(p)));
       d.setValue(this.spec.project ?? "");
-      d.onChange((v) => {
-        this.spec.project = v || undefined;
-        const c = v ? this.store.loadGroups().projects.get(v.toLowerCase())?.context : undefined;
-        if (c) {
-          this.spec.context = c;
-          ctxDrop?.setValue(c);
-        }
-      });
-    });
-    new Setting(contentEl).setName("Context").addDropdown((d) => {
-      ctxDrop = d;
-      const list = this.store.contexts();
-      if (this.spec.context && !list.includes(this.spec.context)) list.unshift(this.spec.context);
-      d.addOption("", "— none —");
-      for (const c of list) d.addOption(c, c);
-      d.setValue(this.spec.context ?? "");
-      d.onChange((v) => (this.spec.context = v || undefined));
+      d.onChange((v) => (this.spec.project = v || undefined));
     });
 
     const est = new Setting(contentEl).setName("Takes");
@@ -582,7 +574,6 @@ export class TriageModal extends Modal {
     this.close();
     if (action === "dismiss") return this.onDone({ action });
     lastTriage.project = this.spec.project;
-    lastTriage.context = this.spec.context;
     this.onDone({ action, spec: { ...this.spec, title: this.spec.title.trim() } });
   }
 

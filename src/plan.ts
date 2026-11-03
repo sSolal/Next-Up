@@ -1,21 +1,20 @@
-/* Time, projects and contexts over the task index. Pure. */
+/* Time and projects over the task index. Pure. */
 import type { NextUpSettings } from "./settingsTypes.ts";
 import { capacityMin } from "./settingsTypes.ts";
 import { type GroupData, type TaskData, type TaskIndex, addDays, ancestors, childrenOf, daysBetween, isActionable, isDone, isoDate, normTag } from "./model.ts";
 
-/** Project and context notes by lower-cased name. */
+/** Project notes by lower-cased name. */
 export interface GroupIndex {
   projects: Map<string, GroupData>;
-  contexts: Map<string, GroupData>;
 }
 
 export function buildGroups(groups: GroupData[]): GroupIndex {
-  const out: GroupIndex = { projects: new Map(), contexts: new Map() };
-  for (const g of groups) (g.kind === "project" ? out.projects : out.contexts).set(g.name.toLowerCase(), g);
+  const out: GroupIndex = { projects: new Map() };
+  for (const g of groups) out.projects.set(g.name.toLowerCase(), g);
   return out;
 }
 
-export const NO_GROUPS: GroupIndex = { projects: new Map(), contexts: new Map() };
+export const NO_GROUPS: GroupIndex = { projects: new Map() };
 
 /* ---------- inherited values ---------- */
 
@@ -30,18 +29,6 @@ export function effectivePlanned(t: TaskData, idx: TaskIndex): string | undefine
 export function effectiveProject(t: TaskData, idx: TaskIndex): string | undefined {
   if (t.project) return t.project;
   for (const a of ancestors(t, idx)) if (a.project) return a.project;
-  return undefined;
-}
-
-/** Context: its own, its project's, or else that of its nearest ancestor (same rule). */
-export function effectiveContext(t: TaskData, idx: TaskIndex, groups: GroupIndex): string | undefined {
-  for (const x of [t, ...ancestors(t, idx)]) {
-    if (x.context) return x.context;
-    if (x.project) {
-      const c = groups.projects.get(x.project.toLowerCase())?.context;
-      if (c) return c;
-    }
-  }
   return undefined;
 }
 
@@ -130,7 +117,7 @@ export function dueForReview(t: TaskData, s: NextUpSettings, today: string): boo
   return !t.reviewed || daysBetween(t.reviewed, today) >= s.reviewAfterDays;
 }
 
-/* ---------- projects and contexts ---------- */
+/* ---------- projects ---------- */
 
 export interface GroupStats {
   group: GroupData;
@@ -153,10 +140,9 @@ export interface GroupStats {
   days: number;
 }
 
-export function groupTasks(g: GroupData, idx: TaskIndex, groups: GroupIndex): TaskData[] {
+export function groupTasks(g: GroupData, idx: TaskIndex): TaskData[] {
   const name = g.name.toLowerCase();
-  if (g.kind === "project") return idx.tasks.filter((t) => effectiveProject(t, idx)?.toLowerCase() === name);
-  return idx.tasks.filter((t) => effectiveContext(t, idx, groups)?.toLowerCase() === name);
+  return idx.tasks.filter((t) => effectiveProject(t, idx)?.toLowerCase() === name);
 }
 
 export function nextAction(list: TaskData[], idx: TaskIndex, s: NextUpSettings): TaskData | undefined {
@@ -172,8 +158,8 @@ export function nextAction(list: TaskData[], idx: TaskIndex, s: NextUpSettings):
   return leaves[0];
 }
 
-export function groupStats(g: GroupData, idx: TaskIndex, groups: GroupIndex, s: NextUpSettings, today: string): GroupStats {
-  const tasks = groupTasks(g, idx, groups);
+export function groupStats(g: GroupData, idx: TaskIndex, s: NextUpSettings, today: string): GroupStats {
+  const tasks = groupTasks(g, idx);
   const open = tasks.filter((t) => isActionable(t, s));
   const sum = sumRemaining(open, idx, s);
   let last = isoDate(new Date(g.mtime));
@@ -236,8 +222,7 @@ export function v04Patch(fm: Record<string, unknown>, editedOn: string, s: NextU
 
 export interface GroupsQuery {
   title?: string;
-  kind: GroupData["kind"];
-  /** project statuses shown; contexts have none */
+  /** project statuses shown */
   statuses: string[];
   /** only groups led by this person (`me`), and only their tasks in the sums */
   owner?: string;
@@ -252,7 +237,7 @@ export interface GroupsQuery {
 }
 
 export function parseGroupsQuery(source: string): GroupsQuery {
-  const q: GroupsQuery = { kind: "project", statuses: ["active"], byAim: false, expanded: false, days: 7, errors: [] };
+  const q: GroupsQuery = { statuses: ["active"], byAim: false, expanded: false, days: 7, errors: [] };
   for (const raw of source.split(/\r?\n/)) {
     const line = raw.replace(/\s+#\s.*$/, "");
     if (!line.trim() || /^\s*(#|\/\/)/.test(line)) continue;
@@ -269,9 +254,8 @@ export function parseGroupsQuery(source: string): GroupsQuery {
         break;
       case "type":
       case "kind":
-        if (lv === "project" || lv === "projects") q.kind = "project";
-        else if (lv === "context" || lv === "contexts") q.kind = "context";
-        else q.errors.push("type: use project or context");
+        // contexts are gone: what was one is a project now
+        if (lv !== "project" && lv !== "projects") q.errors.push("type: only projects (contexts are projects now)");
         break;
       case "status":
         q.statuses = lv === "any" || lv === "all" ? [] : lv.split(",").map((x) => x.trim()).filter(Boolean);

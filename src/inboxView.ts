@@ -62,7 +62,7 @@ export class InboxBlock extends MarkdownRenderChild {
     if (file.extension !== "md" || file.path === this.sourcePath) return false;
     if (f && !file.path.startsWith(f + "/")) return false;
     const store = this.plugin.store;
-    if (store.isTemplate(file.path) || store.isTaskFile(file) || store.groupKind(file) || this.plugin.people.isPersonFile(file)) return false;
+    if (store.isTemplate(file.path) || store.isTaskFile(file) || store.isProjectFile(file) || this.plugin.people.isPersonFile(file)) return false;
     return !ignoredByFrontmatter(this.plugin.app.metadataCache.getFileCache(file)?.frontmatter, this.plugin.settings.inboxIgnoreKeys);
   }
 
@@ -173,7 +173,7 @@ export class InboxBlock extends MarkdownRenderChild {
     return ok;
   }
 
-  /** Sort the item in one go: a task (project, context, time, day), an idea, or dismissed. */
+  /** Sort the item in one go: a task (project, time, day), an idea, or dismissed. */
   private triage(file: TFile, item: CheckItem) {
     const s = this.plugin.settings;
     const fm = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;

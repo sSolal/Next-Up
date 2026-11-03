@@ -101,17 +101,17 @@ test("someday reads as the parked status, a missing status as todo", () => {
   assert.equal(taskFromFrontmatter({}, "T.md", 0, S).status, "todo");
 });
 
-test("taskFromFrontmatter reads estimate, planned, context, waiting, spent, reviewed", () => {
+test("taskFromFrontmatter reads estimate, planned, waiting, spent, reviewed", () => {
   const t = taskFromFrontmatter(
-    { estimate: "1h30", planned: "2026-10-31", context: "[[Contexts/Infra]]", waiting_on: "[[Charlotte]]", spent: 2, reviewed: "2026-10-01" },
+    { estimate: "1h30", planned: "2026-10-31", waiting_on: "[[Bob]]", spent: 2, reviewed: "2026-10-01" },
     "T.md", 0, S,
   );
-  assert.deepEqual([t.estimate, t.planned, t.context, t.waitingOn, t.spent, t.reviewed], [90, "2026-10-31", "Infra", "Charlotte", 120, "2026-10-01"]);
+  assert.deepEqual([t.estimate, t.planned, t.waitingOn, t.spent, t.reviewed], [90, "2026-10-31", "Bob", 120, "2026-10-01"]);
 });
 
-test("mergeSettings adds the waiting and parked statuses to older status lists", () => {
+test("mergeSettings adds the parked status to older status lists", () => {
   const s = mergeSettings({ statuses: ["todo", "doing", "review", "done", "dropped"] });
-  assert.deepEqual(s.statuses, ["todo", "doing", "review", "waiting", "idea", "done", "dropped"]);
+  assert.deepEqual(s.statuses, ["todo", "doing", "review", "idea", "done", "dropped"]);
   assert.deepEqual(mergeSettings({ fields: { estimate: "est" } }).fields.estimate, "est");
 });
 

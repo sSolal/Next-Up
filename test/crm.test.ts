@@ -19,7 +19,7 @@ import {
 } from "../src/crm.ts";
 
 const S = DEFAULT_SETTINGS;
-const ctx: CrmCtx = { today: "2026-09-24", me: "Solal", sourcePath: "Network/CRM.md", settings: S };
+const ctx: CrmCtx = { today: "2026-09-24", me: "Ada", sourcePath: "Network/CRM.md", settings: S };
 
 function person(name: string, fm: Record<string, unknown> = {}, folder = "People"): PersonData {
   return personFromFrontmatter({ type: "person", ...fm }, `${folder}/${name}.md`, 0, S);
@@ -27,7 +27,7 @@ function person(name: string, fm: Record<string, unknown> = {}, folder = "People
 
 const PEOPLE = [
   person("Clementine", { tags: ["funder", "vc"], summary: "VC at XAnge", org: "[[XAnge]]", last_contact: "2026-09-20", next_contact: "2026-09-22", circle: "advisor", contact: " \tclementine@xange.vc" }),
-  person("Antoine", { tags: ["advisor"], role: "Board ISS", owner: "Solal", last_contact: "2026-07-01", next_contact: "2026-10-15" }),
+  person("Antoine", { tags: ["advisor"], role: "Board ISS", owner: "Ada", last_contact: "2026-07-01", next_contact: "2026-10-15" }),
   person("Ambroise", { circle: "", segment: "VC" }),
   person("Iréna", { tags: "advisor, incubator", next_contact: "2026-09-26" }, "Other"),
 ];
@@ -103,7 +103,7 @@ test("effectiveLast: newest of field and past meetings", () => {
 
 test("crmPrefill: first tag, owner, folder, single-valued properties", () => {
   const q = parseCrmQuery("tags: funder, vc\nowner: me\nfolder: this\ncircle: advisor\nsegment: a, b\nnext: soon");
-  assert.deepEqual(crmPrefill(q, ctx), { tags: ["funder"], owner: "Solal", folder: "Network", props: { circle: "advisor" } });
+  assert.deepEqual(crmPrefill(q, ctx), { tags: ["funder"], owner: "Ada", folder: "Network", props: { circle: "advisor" } });
 });
 
 test("next: never is settled: out of none, stale and the top of the list", () => {

@@ -46,7 +46,7 @@ export class TodoBlock extends MarkdownRenderChild {
 
   private maybeRefresh(file: TFile) {
     const store = this.plugin.store;
-    if (file.path === this.plugin.settings.teamNote || store.isTaskFile(file) || store.groupKind(file) || this.list?.shown.has(file.path)) this.scheduleRender();
+    if (file.path === this.plugin.settings.teamNote || store.isTaskFile(file) || store.isProjectFile(file) || this.list?.shown.has(file.path)) this.scheduleRender();
   }
 
   private scheduleRender() {

@@ -1,16 +1,18 @@
-import { MarkdownRenderChild, Menu, TFile, setIcon } from "obsidian";
+import { MarkdownRenderChild, Menu, setIcon } from "obsidian";
 import type NextUpPlugin from "./main.ts";
-import { type GroupData, isoDate } from "./model.ts";
+import { ARCHIVED, type GroupData, isoDate } from "./model.ts";
 import { type Ctx, dueLabel, parseQuery } from "./query.ts";
 import { type ListHost, ListView, editCapacity } from "./listView.ts";
 import { type GroupStats, type GroupsQuery, compareGroupStats, groupStats, leftovers, parseGroupsQuery, weekLoad } from "./plan.ts";
 import { ageLabel } from "./crm.ts";
 import { formatDuration } from "./duration.ts";
-import { StringSuggestModal } from "./modals.ts";
 
 let nextId = 0;
 
-/** Shared by both blocks: re-render when a task or a project/context note changes. */
+/** What a project can be; archived ones leave the lists but stay to pick. */
+const PROJECT_STATUSES = ["active", "paused", ARCHIVED, "done", "dropped"];
+
+/** Shared by both blocks: re-render when a task or a project note changes. */
 abstract class GroupsChild extends MarkdownRenderChild {
   plugin: NextUpPlugin;
   id = `nu-groups-${nextId++}`;
@@ -28,7 +30,7 @@ abstract class GroupsChild extends MarkdownRenderChild {
   onload() {
     const app = this.plugin.app;
     this.registerEvent(app.metadataCache.on("changed", (file) => {
-      if (this.plugin.store.isTaskFile(file) || this.plugin.store.groupKind(file)) this.scheduleRender();
+      if (this.plugin.store.isTaskFile(file) || this.plugin.store.isProjectFile(file)) this.scheduleRender();
     }));
     this.registerEvent(app.vault.on("delete", () => this.scheduleRender()));
     this.registerEvent(app.vault.on("rename", () => this.scheduleRender()));
@@ -75,7 +77,7 @@ abstract class GroupsChild extends MarkdownRenderChild {
 }
 
 /**
- * `next-up-projects`: one card per project (or context) note, with the time left, what to do next, when it
+ * `next-up-projects`: one card per project note, with the time left, what to do next, when it
  * last moved, and whether it is nearly done (finish it), stalled or empty (decide). Expands to its tasks.
  */
 export class ProjectsBlock extends GroupsChild {
@@ -93,17 +95,17 @@ export class ProjectsBlock extends GroupsChild {
     const groups = store.loadGroups();
     const today = isoDate(new Date());
     const owner = this.owner();
-    let list = [...(q.kind === "project" ? groups.projects : groups.contexts).values()];
-    if (q.kind === "project" && q.statuses.length) list = list.filter((g) => q.statuses.includes(g.status));
+    let list = [...groups.projects.values()];
+    if (q.statuses.length) list = list.filter((g) => q.statuses.includes(g.status));
     if (owner) list = list.filter((g) => !g.owner || g.owner.toLowerCase() === owner.toLowerCase());
-    let stats = list.map((g) => groupStats(g, idx, groups, this.s, today)).sort(compareGroupStats);
+    let stats = list.map((g) => groupStats(g, idx, this.s, today)).sort(compareGroupStats);
     if (q.limit) stats = stats.slice(0, q.limit);
 
     const head = el.createDiv({ cls: "nu-head" });
-    head.createSpan({ cls: "nu-title", text: q.title ?? (q.kind === "project" ? "Projects" : "Contexts") });
+    head.createSpan({ cls: "nu-title", text: q.title ?? "Projects" });
     const count = head.createSpan({ cls: "nu-count", text: String(stats.length) });
     // a few active projects at once, or none of them moves
-    if (q.kind === "project" && q.statuses.length === 1 && q.statuses[0] === "active" && stats.length > 5) {
+    if (q.statuses.length === 1 && q.statuses[0] === "active" && stats.length > 5) {
       count.addClass("is-over");
       count.setAttr("aria-label", "More than 5 active projects: pause some");
     }
@@ -112,7 +114,7 @@ export class ProjectsBlock extends GroupsChild {
 
     const rows = el.createDiv({ cls: "nu-rows" });
     if (!stats.length) {
-      rows.createDiv({ cls: "nu-empty", text: q.kind === "project" ? "No project note matches (type: project)." : "No context note yet (type: context)." });
+      rows.createDiv({ cls: "nu-empty", text: "No project note matches (type: project)." });
       return;
     }
     if (q.byAim) {
@@ -156,8 +158,7 @@ export class ProjectsBlock extends GroupsChild {
 
     const main = card.createDiv({ cls: "nu-main nu-group-main" });
     this.link(main, g.path, g.name).addClass("nu-name");
-    const sub = [g.kind === "project" ? g.aim : undefined, g.kind === "project" ? g.context : undefined].filter(Boolean).join(" · ");
-    if (sub) main.createDiv({ cls: "nu-person-sub", text: sub.replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, "$2") });
+    if (g.aim) main.createDiv({ cls: "nu-person-sub", text: g.aim.replace(/\[\[([^\]|]+\|)?([^\]]+)\]\]/g, "$2") });
     if (g.doneWhen) main.createDiv({ cls: "nu-person-sub", text: `Done when: ${g.doneWhen}` });
     const next = main.createDiv({ cls: "nu-group-next" });
     if (x.next) {
@@ -176,7 +177,7 @@ export class ProjectsBlock extends GroupsChild {
     } else if (!x.empty) next.setText("Next: nothing actionable (all waiting or nested).");
 
     const chips = card.createDiv({ cls: "nu-chips" });
-    if (x.empty) chips.createSpan({ cls: "nu-chip nu-flag is-empty", text: g.kind === "project" ? "nothing left: close it?" : "nothing open", attr: { "aria-label": "No open task. Mark the project done, or add its next step." } });
+    if (x.empty) chips.createSpan({ cls: "nu-chip nu-flag is-empty", text: "nothing left: close it?", attr: { "aria-label": "No open task. Mark the project done, or add its next step." } });
     else if (x.almostDone) chips.createSpan({ cls: "nu-chip nu-flag is-almost", text: "almost done", attr: { "aria-label": "Little left: finishing it takes it off the table" } });
     if (x.stalled && !x.empty) chips.createSpan({ cls: "nu-chip nu-flag is-stalled", text: "stalled", attr: { "aria-label": `Nothing moved for more than ${s.stalledDays} days` } });
     if (x.open) {
@@ -189,17 +190,15 @@ export class ProjectsBlock extends GroupsChild {
     if (x.doneThisWeek) chips.createSpan({ cls: "nu-chip nu-last is-fresh", text: `✓ ${x.doneThisWeek}`, attr: { "aria-label": "Done in the last 7 days" } });
     if (g.owner && g.owner.toLowerCase() !== s.me.toLowerCase()) chips.createSpan({ cls: "nu-chip nu-owner", text: g.owner });
 
-    if (g.kind === "project") {
-      const actions = card.createSpan({ cls: "nu-actions" });
-      const more = actions.createSpan({ cls: "nu-action", attr: { "aria-label": "Status" } });
-      setIcon(more, "more-horizontal");
-      const menu = (ev: MouseEvent) => this.showMenu(ev, g);
-      more.addEventListener("click", menu);
-      card.addEventListener("contextmenu", (ev) => {
-        ev.preventDefault();
-        menu(ev);
-      });
-    }
+    const actions = card.createSpan({ cls: "nu-actions" });
+    const more = actions.createSpan({ cls: "nu-action", attr: { "aria-label": "Status" } });
+    setIcon(more, "more-horizontal");
+    const menu = (ev: MouseEvent) => this.showMenu(ev, g);
+    more.addEventListener("click", menu);
+    card.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      menu(ev);
+    });
 
     if (open) this.renderTasks(node.createDiv({ cls: "nu-children nu-person-tasks" }), g);
   }
@@ -209,14 +208,9 @@ export class ProjectsBlock extends GroupsChild {
     const f = store.fileFor(g.path);
     if (!f) return;
     const menu = new Menu();
-    for (const st of ["active", "paused", "done", "dropped"]) {
-      menu.addItem((i) => i.setTitle(st[0].toUpperCase() + st.slice(1)).setChecked(g.status === st).onClick(() => void store.update(f, { [this.s.fields.status]: st })));
+    for (const st of PROJECT_STATUSES) {
+      menu.addItem((i) => i.setTitle(st[0].toUpperCase() + st.slice(1)).setChecked(g.status === st).onClick(() => void store.setProjectStatus(f, st)));
     }
-    menu.addSeparator();
-    menu.addItem((i) => i.setTitle("Context…").setIcon("brain").onClick(() => {
-      const none = "— none —";
-      new StringSuggestModal(this.plugin.app, [...store.contexts(), none], (c) => void store.setContext(f as TFile, c === none ? undefined : c), "Default context of its tasks", false).open();
-    }));
     menu.showAtMouseEvent(ev);
   }
 
@@ -232,7 +226,7 @@ export class ProjectsBlock extends GroupsChild {
         render: () => this.render(),
       };
       const owner = this.q.owner ? `\nowner: ${this.q.owner}` : "";
-      entry = { host, view: new ListView(host, parseQuery(`${g.kind}: this${owner}`)) };
+      entry = { host, view: new ListView(host, parseQuery(`project: this${owner}`)) };
       this.lists.set(g.path, entry);
     }
     entry.host.containerEl = el;

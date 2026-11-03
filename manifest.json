@@ -1,9 +1,9 @@
 {
   "id": "next-up",
   "name": "Next Up",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minAppVersion": "1.4.0",
-  "description": "Tasks as notes in filtered, nested, drag-and-drop lists. Planned days, estimates and load, projects and contexts, an inbox that bubbles up every checkbox.",
+  "description": "Tasks as notes, on a Kanban board of everything and in filtered, nested, drag-and-drop lists. Planned days, estimates and load, projects and contexts, an inbox that bubbles up every checkbox.",
   "author": "Solal Stern",
   "authorUrl": "https://github.com/sSolal",
   "isDesktopOnly": false
