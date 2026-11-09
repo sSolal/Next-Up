@@ -73,6 +73,24 @@ export interface BoardPrefs {
   projects: string[];
   /** `mode:column` → folded, when it differs from the column's default */
   folded: Record<string, boolean>;
+  /** the open tab: dive (the columns above) · plan */
+  tab: BoardTabId;
+  plan: PlanPrefs;
+}
+
+export type BoardTabId = "dive" | "plan";
+export const BOARD_TAB_IDS: BoardTabId[] = ["dive", "plan"];
+
+/** The Plan tab: its week and the backlog of undated tasks beside it. */
+export interface PlanPrefs {
+  view: "week";
+  /** projects shown in the backlog (names, `none`); empty = all */
+  backlogProjects: string[];
+  /** the backlog shows ideas (parked tasks) too */
+  backlogIdeas: boolean;
+  backlogOpen: boolean;
+  /** Saturday and Sunday open even when empty */
+  showWeekend: boolean;
 }
 
 /** A kind of note the Capture dialog can create. `name` is a file name pattern with {{title}} and {{date}}. */
@@ -188,7 +206,9 @@ export const DEFAULT_FIELDS: FieldNames = {
 /** The short status list: to do, in progress (shown as Open on the board), one day, finished, abandoned. */
 export const SIMPLE_STATUSES = ["todo", "doing", "idea", "done", "dropped"];
 
-export const DEFAULT_BOARD: BoardPrefs = { mode: "when", owners: ["me", "none"], projects: [], folded: {} };
+export const DEFAULT_PLAN: PlanPrefs = { view: "week", backlogProjects: [], backlogIdeas: true, backlogOpen: false, showWeekend: false };
+
+export const DEFAULT_BOARD: BoardPrefs = { mode: "when", owners: ["me", "none"], projects: [], folded: {}, tab: "dive", plan: { ...DEFAULT_PLAN } };
 
 export const DEFAULT_SETTINGS: NextUpSettings = {
   me: "",
@@ -269,6 +289,21 @@ function mergeBoard(raw: unknown): BoardPrefs {
     owners: strs(b.owners, DEFAULT_BOARD.owners),
     projects: strs(b.projects, []),
     folded: b.folded && typeof b.folded === "object" ? (b.folded as Record<string, boolean>) : {},
+    tab: BOARD_TAB_IDS.includes(b.tab as BoardTabId) ? (b.tab as BoardTabId) : DEFAULT_BOARD.tab,
+    plan: mergePlan(b.plan, strs),
+  };
+}
+
+function mergePlan(raw: unknown, strs: (v: unknown, d: string[]) => string[]): PlanPrefs {
+  const p = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const bool = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
+  return {
+    view: "week",
+    // `pool…`: its name in 0.6.0
+    backlogProjects: strs(p.backlogProjects ?? p.poolProjects, DEFAULT_PLAN.backlogProjects),
+    backlogIdeas: bool(p.backlogIdeas ?? p.poolIdeas, DEFAULT_PLAN.backlogIdeas),
+    backlogOpen: bool(p.backlogOpen, DEFAULT_PLAN.backlogOpen),
+    showWeekend: bool(p.showWeekend, DEFAULT_PLAN.showWeekend),
   };
 }
 

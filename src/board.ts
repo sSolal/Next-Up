@@ -53,10 +53,14 @@ interface ColOpts {
 }
 
 function col(mode: BoardMode, id: string, title: string, filter: BoardFilter, o: ColOpts = {}): ColumnDef {
-  const query: Query = {
+  return { id, title, query: columnQuery(title, [{ k: "column", mode, id }, ...(o.extra ?? []), ...filterConds(filter)], o), folded: o.folded ?? false, late: o.late };
+}
+
+function columnQuery(title: string, conds: Cond[], o: ColOpts): Query {
+  return {
     view: "list",
     title,
-    conds: [{ k: "column", mode, id }, ...(o.extra ?? []), ...filterConds(filter)],
+    conds,
     sort: o.sort ?? "urgency",
     limit: o.limit,
     done: o.done ? "show" : "hide",
@@ -69,7 +73,6 @@ function col(mode: BoardMode, id: string, title: string, filter: BoardFilter, o:
     dropPatch: o.patch,
     askDate: o.askDate,
   };
-  return { id, title, query, folded: o.folded ?? false, late: o.late };
 }
 
 /** Late tasks under the filter, whatever the mode: for the header's warning. */
@@ -141,4 +144,30 @@ export function boardColumns(mode: BoardMode, idx: TaskIndex, groups: GroupIndex
       return cols;
     }
   }
+}
+
+/* ---------- the Plan tab ---------- */
+
+/** Tasks with a dropped status (done statuses but the first) stay out of the week. */
+function notDropped(s: NextUpSettings): Cond[] {
+  const list = s.doneStatuses.slice(1).map((x) => x.toLowerCase());
+  return list.length ? [{ k: "not", c: { k: "status", mode: "list", list } }] : [];
+}
+
+/**
+ * A day of the week: what is planned on it (done or not), and what was finished on it without a day.
+ * A card dropped or added here is planned on it; an idea becomes a to-do.
+ */
+export function dayColumn(date: string, title: string, filter: BoardFilter, s: NextUpSettings): ColumnDef {
+  const when: Cond = { k: "or", alts: [[{ k: "planned", op: "on", date }], [{ k: "planned", op: "none" }, { k: "completed", op: "on", date }]] };
+  const query = columnQuery(title, [when, ...notDropped(s), ...filterConds(filter)], { sort: "order", done: true, patch: { planned: date, unpark: true } });
+  query.flagUnestimated = true;
+  return { id: `d:${date}`, title, query, folded: false };
+}
+
+/** The backlog beside the week: open tasks with no day (and ideas, with `ideas`), to pull into a day. */
+export function backlogColumn(filter: BoardFilter, s: NextUpSettings, ideas: boolean): ColumnDef {
+  const list = s.statuses.filter((x) => !s.doneStatuses.includes(x) && (ideas || !s.parkedStatuses.includes(x))).map((x) => x.toLowerCase());
+  const conds: Cond[] = [{ k: "planned", op: "none" }, { k: "status", mode: "list", list }, ...filterConds(filter)];
+  return { id: "backlog", title: "Backlog", query: columnQuery("Backlog", conds, { sort: "project", patch: { planned: null } }), folded: false };
 }

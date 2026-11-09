@@ -1,9 +1,10 @@
 import { Menu, Notice, TFile, setIcon } from "obsidian";
 import type NextUpPlugin from "./main.ts";
-import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, descendants, isActionable, isBlocked, blockers, isDone, parentOf } from "./model.ts";
+import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, descendants, isActionable, isBlocked, blockers, isDone, isParked, parentOf } from "./model.ts";
 import { capacityMin } from "./settingsTypes.ts";
 import { formatDuration, splitEstimate } from "./duration.ts";
-import { effectiveProject, remaining } from "./plan.ts";
+import { effectiveProject, needsEstimate, remaining } from "./plan.ts";
+import { hue } from "./color.ts";
 import {
   type Ctx,
   type Query,
@@ -101,7 +102,8 @@ export class ListView {
     }
   }
 
-  private draw(el: HTMLElement) {
+  /** Match the tasks and build the tree, without drawing (a folded column takes drops all the same). */
+  private prepare() {
     const q = this.q;
     this.ctx = this.block.ctx();
     this.idx = this.store.loadIndex();
@@ -109,6 +111,11 @@ export class ListView {
     const matched = this.idx.tasks.filter((t) => this.matcher.matches(t, q));
     this.roots = buildTree(matched, this.idx, q, this.s, this.ctx.today);
     this.shown = new Set(matched.map((t) => t.path));
+  }
+
+  private draw(el: HTMLElement) {
+    const q = this.q;
+    this.prepare();
 
     el.addClass("nu-list");
     for (const e of q.errors) el.createDiv({ cls: "nu-error", text: `next-up: ${e}` });
@@ -192,6 +199,7 @@ export class ListView {
     const done = isDone(t, s);
     const row = list.createDiv({ cls: "nu-row nu-card" });
     row.toggleClass("is-done", done);
+    if (this.q.flagUnestimated && needsEstimate(t, this.idx, s)) row.addClass("is-unestimated");
     row.draggable = true;
 
     const handle = row.createSpan({ cls: "nu-handle", attr: { "aria-label": "Drag to move, reorder or nest" } });
@@ -247,7 +255,9 @@ export class ListView {
     if (this.q.board && this.q.dropPatch?.owner === undefined) this.renderOwnerChip(chips, t);
     else if (t.owner && t.owner.toLowerCase() !== this.ctx.me.toLowerCase()) chips.createSpan({ cls: "nu-chip nu-owner", text: t.owner });
     if (node.progress) chips.createSpan({ cls: "nu-chip nu-progress", text: `${node.progress.done}/${node.progress.total}` });
-    if (!done && !node.crumbs.length) this.renderGroupChip(main, t);
+    // on the board every card says its project, done or not; elsewhere a grey line under open tasks
+    if (this.q.board) this.renderProjectChip(chips, row, t);
+    else if (!done && !node.crumbs.length) this.renderGroupChip(main, t);
 
     if (!done && (this.q.view === "review" || this.q.view === "leftovers")) this.renderQuickButtons(row, t);
 
@@ -314,6 +324,24 @@ export class ListView {
     if (!project) return;
     main.addClass("has-sub");
     main.createDiv({ cls: "nu-sub", text: project });
+  }
+
+  /** On the board: the project as a chip, a colour per project (unless the column is that project); a click changes it. */
+  private renderProjectChip(chips: HTMLElement, row: HTMLElement, t: TaskData) {
+    const project = effectiveProject(t, this.idx);
+    row.dataset.project = project ? project.toLowerCase() : "none";
+    if (!project) return;
+    // a stripe of this colour down each card of the board
+    row.style.setProperty("--nu-proj-hue", String(hue(project)));
+    row.addClass("has-project");
+    if (this.q.conds.some((c) => c.k === "project")) return;
+    // its first word: the full name is in the tooltip (and in the week's legend)
+    const chip = chips.createSpan({ cls: "nu-chip nu-project", text: project.split(/\s+/)[0], attr: { "aria-label": `${project} (click to change)` } });
+    chip.style.setProperty("--nu-hue", String(hue(project)));
+    chip.addEventListener("click", () => {
+      const f = this.file(t);
+      if (f) this.pickProject(t, f);
+    });
   }
 
   /** Review: plan today · keep (seen, back in a while) · idea · drop. Leftovers: today · tomorrow · unplan · drop. */
@@ -725,6 +753,7 @@ export class ListView {
     if (nesting) patch.addTags = [];
     const dragged = this.idx.byPath.get(drag.path);
     if (patch.reopen && !patch.status && dragged && isDone(dragged, this.s)) patch.status = this.s.todoStatus;
+    if (patch.unpark && !patch.status && dragged && isParked(dragged, this.s)) patch.status = this.s.todoStatus;
     if (this.q.askDate) {
       // the day is asked; nothing moves if the dialog is left
       const today = this.ctx.today;
@@ -762,6 +791,8 @@ export class ListView {
 
   /** Dropped on the block itself: take the block's tags; last among the top-level rows. */
   async dropAtEnd(drag: DragState) {
+    // a folded column was never drawn
+    if (!this.idx) this.prepare();
     const f = this.store.fileFor(drag.path);
     const dragged = this.idx.byPath.get(drag.path);
     if (!f || !dragged) return;
@@ -791,11 +822,4 @@ export function editCapacity(plugin: NextUpPlugin, day: string, today: string) {
     for (const d of Object.keys(s.capacity)) if (d < today) delete s.capacity[d];
     void plugin.saveSettings();
   }).open();
-}
-
-/** A stable hue for a name, so each person keeps their colour on every card. */
-function hue(name: string): number {
-  let h = 0;
-  for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return h;
 }

@@ -1,6 +1,6 @@
 import type { NextUpSettings } from "./settingsTypes.ts";
 import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, isDone, isParked, linkBasename, normTag, parentOf, parseDate } from "./model.ts";
-import { dueForReview, effectivePlanned, effectiveProject, lastTouched, sumRemaining } from "./plan.ts";
+import { dueForReview, effectivePlanned, effectiveProject, lastTouched, needsEstimate, sumRemaining } from "./plan.ts";
 import { type BoardMode, columnOf, isLate } from "./columns.ts";
 
 /* ---------- block query: parsing ---------- */
@@ -71,6 +71,8 @@ export interface Query {
   dropPatch?: Partial<MovePatch>;
   /** a card dropped here asks for its day */
   askDate?: boolean;
+  /** tasks with no estimate come first, in red (the week's days) */
+  flagUnestimated?: boolean;
 }
 
 /** What a query is evaluated against. */
@@ -457,6 +459,11 @@ function mentionsCompleted(c: Cond): boolean {
   return false;
 }
 
+/** Monday of the week of `today`. */
+export function startOfWeek(today: string): string {
+  return addDays(endOfWeek(today), -6);
+}
+
 /** Sunday of the week of `today` (weeks start on Monday). */
 export function endOfWeek(today: string): string {
   const [y, m, d] = today.split("-").map(Number);
@@ -541,7 +548,9 @@ export function buildTree(matched: TaskData[], idx: TaskIndex, q: Query, s: Next
       roots.push(node);
     }
   }
-  const cmp = comparator(q.sort, s, today ? { idx, today } : undefined);
+  const base = comparator(q.sort, s, today ? { idx, today } : undefined);
+  const unknown = (t: TaskData) => (q.flagUnestimated && needsEstimate(t, idx, s) ? 0 : 1);
+  const cmp = (a: TaskData, b: TaskData) => unknown(a) - unknown(b) || base(a, b);
   const sortRec = (list: TreeNode[]) => {
     list.sort((a, b) => cmp(a.task, b.task));
     for (const n of list) sortRec(n.children);
@@ -567,6 +576,8 @@ export function treeRemaining(nodes: TreeNode[], idx: TaskIndex, s: NextUpSettin
 
 /** The single day a block is about (`planned: today`, `planned: on +1d`), for its load bar. */
 export function plannedDay(q: Query, today: string): string | undefined {
+  // a day column of the week plans what it takes on its day, whatever its conditions
+  if (q.dropPatch?.planned) return q.dropPatch.planned;
   for (const c of q.conds) if (c.k === "planned" && c.op === "on") return resolveDate(c.date ?? "", today);
   return undefined;
 }
@@ -651,6 +662,8 @@ export interface MovePatch {
   planned?: string | null;
   /** a finished task moved here opens again */
   reopen?: boolean;
+  /** a parked task (an idea) moved here becomes a to-do */
+  unpark?: boolean;
 }
 
 /** Moving a task from block `from` to block `to`: drop the tags that put it in `from`, take what `to` prefills. */

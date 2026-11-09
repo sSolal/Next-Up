@@ -1,6 +1,6 @@
 {
   "name": "next-up",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Obsidian plugin: tasks as notes, shown in filtered, nested, drag-and-drop lists.",
   "main": "main.js",
   "type": "module",

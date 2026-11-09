@@ -8,7 +8,7 @@ An Obsidian plugin that turns notes into a simple, composable task manager, for 
 - **Time is visible.** `estimate: 45m` on tasks; blocks sum what is left, a day's list shows its load against your hours, projects show what remains.
 - **Projects.** A project (`type: project`) is what a task moves forward, with an aim. Subtasks inherit it. Archive the ones you are not working on: they leave the board and the lists but stay to pick.
 - **Nested and ordered.** Subtasks show inside their parent (collapsible). Drag to reorder, drop onto a task to nest, drag to another block to move it there.
-- **A board of everything.** *Open board* shows every task as a Kanban: by day (Late · Today · Later · Not planned · Done), by status, project or person, filtered by who and by project.
+- **A board of everything.** *Open board* shows every task as a Kanban, in tabs per use case. **Dive**: by day (Late · Today · Later · Not planned · Done), by status, project or person, filtered by who and by project. **Plan**: the week, day by day, with each day's load and projects, and the backlog of undated tasks and ideas beside it to drag in.
 - **Add in place.** Each block has an add row that creates a task already matching the block. Paste a markdown list to create many at once, indentation becoming subtasks.
 
 ## Task schema
@@ -60,7 +60,11 @@ Contexts (`type: context`, `context:`) are gone since 0.5: make them projects. A
 
 ## Board
 
-*Open board* (ribbon ▦ or the command) opens the whole list as a Kanban in a tab of its own. Every card is a regular row: check it, click its chips, add subtasks, drag it.
+*Open board* (ribbon ▦ or the command) opens the whole list as a Kanban in a tab of its own. Every card is a regular row: check it, click its chips, add subtasks, drag it. On the board each card has a stripe of its project's colour and a chip with the first word of its name (hover for the full name; click to change it).
+
+Tabs at the top keep use cases apart: **Dive** (below) digs into everything with columns and filters; **Plan** lays out the week. The open tab is remembered per device.
+
+### Dive
 
 **Columns.** The switch at the top splits the board:
 
@@ -74,6 +78,16 @@ Contexts (`type: context`, `context:`) are gone since 0.5: make them projects. A
 **Late** is any open task planned before today (a leftover), or past its due date with no day planned. Whatever the mode, the header shows how many there are (click: see them by day), and in the other modes late cards come first in their column. When mode treats ideas as any task: their day decides. Other statuses (waiting, review…) sit in To-do with their pill.
 
 **Filters**, remembered per device: **Everyone · Me · each owner · Unassigned** (several at once; Me + Unassigned by default), a **Project** picker (archived projects in a section at the bottom, and *No project*), and a name filter. Tasks added in a column match it: one person selected makes them the owner, one project their project. The fold of each column is remembered too; a folded column still takes cards.
+
+### Plan: the week
+
+One column per day, Monday to Sunday (‹ › change week, *This week* comes back). A day holds what is planned on it, **done or not — done cards in green** — and what was finished on it without a day; dropped tasks are left out. Each card has a stripe of its project's colour. **Tasks with no estimate are red and come first** in their day: estimate them to know the load.
+
+- **Load.** Each day's head shows the time left against the hours of the day (red above them; click to set them), a **bar of its projects** sized by time, how many projects it touches (**orange above 3**: a lot of switching) and the time done (`✓ 2h`, from `spent:` or else the estimate). The bar at the top sums the week: planned · done · left.
+- **Projects of the week.** A row of chips gives the week's time per project; click one (or a segment of a day's bar) to pick out its cards, the others fade.
+- **Backlog** (the column on the right, folded until opened): open tasks with no day, and ideas (the *Ideas* toggle), filtered by project chips (*All*, each project, *No project*, several at once). Drag a card onto a day to plan it there — an idea becomes a to-do — and back onto the Backlog to unplan it. Its add row creates undated tasks, in the project when one is picked.
+- **Adding.** Each day's add row plans new tasks that day; *Capture* is there too.
+- Saturday and Sunday stay folded while empty (click to open; the ‹‹ on them folds them again). The people filter is shared with Dive.
 
 The simplified statuses (`todo, doing, idea, done, dropped`) are the default. Older vaults keep their list; *Use the simplified statuses* in the settings switches.
 

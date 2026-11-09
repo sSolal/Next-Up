@@ -251,3 +251,62 @@ input.nu-board-search { width: 12em; height: auto; padding: 3px 8px; font-size: 
 .nu-assignee.is-me { box-shadow: inset 0 0 0 1px currentColor; }
 .nu-assignee.is-none { font-weight: normal; font-style: italic; color: var(--text-faint); background: transparent; box-shadow: inset 0 0 0 1px var(--background-modifier-border); }
 .nu-assignee:hover { filter: brightness(1.1); }
+
+/* board: the project of each card */
+.nu-chip.nu-project { cursor: pointer; font-weight: 600; color: hsl(var(--nu-hue, 0), 50%, 40%); background: var(--background-primary-alt); }
+.theme-dark .nu-chip.nu-project { color: hsl(var(--nu-hue, 0), 60%, 70%); }
+.nu-board .nu-card.has-project { box-shadow: inset 3px 0 0 hsl(var(--nu-proj-hue, 0), 60%, 52%); }
+.nu-chip.nu-project:hover { color: var(--text-normal); }
+
+/* board: tabs (Dive, Plan…) */
+.nu-board-tabs { flex: 0 0 auto; display: flex; gap: 2px; border-bottom: 1px solid var(--background-modifier-border); margin: -4px -14px 0; padding: 0 14px; }
+.nu-board-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: var(--font-ui-small); font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.nu-board-tab:hover { color: var(--text-normal); }
+.nu-board-tab.is-active { color: var(--text-accent); border-bottom-color: var(--interactive-accent); }
+.nu-board-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+
+/* plan: the week */
+.nu-week-nav { display: inline-flex; align-items: center; gap: 4px; }
+button.nu-week-step { height: auto; padding: 3px 6px; }
+button.nu-week-this { height: auto; padding: 3px 10px; font-size: var(--font-ui-small); }
+.nu-week-label { min-width: 12em; text-align: center; font-weight: 600; font-size: var(--font-ui-small); }
+.nu-week-legend { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--font-ui-small); }
+.nu-week-legend-title { color: var(--text-faint); margin-right: 2px; }
+.nu-week-legend-empty { color: var(--text-faint); }
+.nu-week-proj { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 12px; cursor: pointer; border: 1px solid var(--background-modifier-border); }
+.nu-week-proj:hover { border-color: hsl(var(--nu-hue, 0), 60%, 52%); }
+.nu-week-proj.is-active { background: hsla(var(--nu-hue, 0), 60%, 52%, 0.18); border-color: hsl(var(--nu-hue, 0), 60%, 52%); }
+.nu-week-proj-min { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nu-week-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--nu-hue, 0), 60%, 52%); }
+.is-none > .nu-week-dot, .nu-week-seg.is-none { background: var(--text-faint); }
+
+.nu-week-cols .nu-col.nu-week-day:not(.is-folded) { flex: 1 1 0; min-width: 210px; }
+.nu-week-day.is-today { box-shadow: inset 0 3px 0 var(--interactive-accent); }
+.nu-week-day.is-today .nu-week-day-title { color: var(--text-accent); }
+.nu-week-day.is-past:not(.is-today) .nu-week-day-title { color: var(--text-muted); }
+.nu-week-head { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; padding: 2px 26px 6px 2px; }
+.nu-week-day-title { font-weight: 600; }
+.nu-week-mix { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--background-modifier-border); }
+.nu-week-mix:empty { opacity: 0.5; }
+.nu-week-seg { flex: 1 1 0; min-width: 4px; cursor: pointer; background: hsl(var(--nu-hue, 0), 60%, 52%); }
+.nu-week-info { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.nu-week-count.is-over { color: var(--color-orange); font-weight: 600; }
+.nu-week-count.is-over::before { content: "⚠ "; }
+.nu-week-done { color: var(--color-green); }
+.nu-week-cap { cursor: pointer; }
+.nu-week-cap:hover { color: var(--text-normal); }
+.nu-week .nu-col-body .nu-head { padding-top: 0; }
+
+/* cards of the week: a stripe of their project's colour, done ones in green */
+.nu-week .nu-card.is-unestimated { background: rgba(var(--color-red-rgb), 0.12); outline: 1px solid rgba(var(--color-red-rgb), 0.5); outline-offset: -1px; }
+.nu-week .nu-card.is-unestimated .nu-est.is-empty { color: var(--color-red); font-weight: 700; }
+.nu-week .nu-card.is-done { opacity: 1; background: rgba(var(--color-green-rgb), 0.14); }
+.nu-week .nu-card.is-done .nu-name { text-decoration: none; color: var(--text-muted); }
+.nu-week .nu-card.is-done .nu-check { accent-color: var(--color-green); }
+.nu-week.has-highlight .nu-card:not(.is-lit), .nu-week.has-highlight .nu-week-seg:not(.is-lit) { opacity: 0.25; }
+
+/* plan: the backlog of undated tasks */
+.nu-week-cols .nu-col.nu-week-backlog:not(.is-folded) { flex: 0 0 300px; background: var(--background-primary-alt); border: 1px dashed var(--background-modifier-border); }
+.nu-week-backlog-chips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 6.5em; overflow-y: auto; }
+.nu-week-backlog-chips .nu-board-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; }
+.nu-week-sep { width: 1px; align-self: stretch; background: var(--background-modifier-border); margin: 0 2px; }

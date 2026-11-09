@@ -55,6 +55,11 @@ export function unestimated(t: TaskData, idx: TaskIndex, s: NextUpSettings, seen
   return kids.reduce((n, k) => n + unestimated(k, idx, s, seen), 0);
 }
 
+/** Open, with no estimate of its own nor time on its subtasks: no way to know how long it takes. */
+export function needsEstimate(t: TaskData, idx: TaskIndex, s: NextUpSettings): boolean {
+  return isActionable(t, s) && t.estimate == null && remaining(t, idx, s) === 0;
+}
+
 /** The tasks of `list` that have no ancestor in `list`: summing over them counts each subtask once. */
 export function topmost(list: TaskData[], idx: TaskIndex): TaskData[] {
   const set = new Set(list.map((t) => t.path));
