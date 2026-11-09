@@ -322,6 +322,8 @@ export class TaskStore {
       if (spec.order != null) fm[f.order] = spec.order;
       if (spec.estimate != null) fm[f.estimate] = formatDuration(spec.estimate);
       if (spec.planned) fm[f.planned] = spec.planned;
+      // as in setPlanned: a day is someone's day
+      if (spec.planned && !spec.owner && s.me) fm[f.owner] = s.me;
     });
     this.invalidate();
     return file;

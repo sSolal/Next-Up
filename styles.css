@@ -244,3 +244,10 @@ input.nu-board-search { width: 12em; height: auto; padding: 3px 8px; font-size: 
 .nu-board .nu-name { font-size: 0.95em; }
 .nu-board .nu-children { margin-left: 10px; padding-left: 8px; }
 .nu-board .nu-rows { padding-bottom: 10px; }
+
+/* board: who has each card */
+.nu-assignee { cursor: pointer; font-weight: 600; color: hsl(var(--nu-hue, 0), 55%, 42%); background: hsla(var(--nu-hue, 0), 60%, 50%, 0.14); }
+.theme-dark .nu-assignee { color: hsl(var(--nu-hue, 0), 65%, 72%); background: hsla(var(--nu-hue, 0), 60%, 55%, 0.2); }
+.nu-assignee.is-me { box-shadow: inset 0 0 0 1px currentColor; }
+.nu-assignee.is-none { font-weight: normal; font-style: italic; color: var(--text-faint); background: transparent; box-shadow: inset 0 0 0 1px var(--background-modifier-border); }
+.nu-assignee:hover { filter: brightness(1.1); }

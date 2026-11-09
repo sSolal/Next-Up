@@ -244,7 +244,8 @@ export class ListView {
       if (!this.matcher.board.has(tag) || blockTags.has(tag)) continue;
       chips.createSpan({ cls: "nu-chip nu-tag", text: `#${tag}` });
     }
-    if (t.owner && t.owner.toLowerCase() !== this.ctx.me.toLowerCase()) chips.createSpan({ cls: "nu-chip nu-owner", text: t.owner });
+    if (this.q.board && this.q.dropPatch?.owner === undefined) this.renderOwnerChip(chips, t);
+    else if (t.owner && t.owner.toLowerCase() !== this.ctx.me.toLowerCase()) chips.createSpan({ cls: "nu-chip nu-owner", text: t.owner });
     if (node.progress) chips.createSpan({ cls: "nu-chip nu-progress", text: `${node.progress.done}/${node.progress.total}` });
     if (!done && !node.crumbs.length) this.renderGroupChip(main, t);
 
@@ -263,6 +264,20 @@ export class ListView {
     });
 
     this.wireDrag(row, node, siblings, index);
+  }
+
+  /** On the board, every card says who has it (a colour per person, `me` included), or that nobody does; a click reassigns. */
+  private renderOwnerChip(chips: HTMLElement, t: TaskData) {
+    const mine = !!t.owner && t.owner.toLowerCase() === this.ctx.me.toLowerCase();
+    const chip = chips.createSpan({ cls: `nu-chip nu-owner nu-assignee${t.owner ? "" : " is-none"}${mine ? " is-me" : ""}`, attr: { "aria-label": "Click to assign" } });
+    chips.prepend(chip);
+    setIcon(chip.createSpan({ cls: "nu-chip-icon" }), t.owner ? "user" : "user-x");
+    chip.appendText(t.owner ?? "Unassigned");
+    if (t.owner) chip.style.setProperty("--nu-hue", String(hue(t.owner)));
+    chip.addEventListener("click", () => {
+      const f = this.file(t);
+      if (f) new StringSuggestModal(this.plugin.app, this.store.teamMembers(this.idx), (who) => void this.store.assign(f, who), "Who?").open();
+    });
   }
 
   /** Waiting on, planned day (unless the block is that day), time left (or a nudge to estimate). */
@@ -776,4 +791,11 @@ export function editCapacity(plugin: NextUpPlugin, day: string, today: string) {
     for (const d of Object.keys(s.capacity)) if (d < today) delete s.capacity[d];
     void plugin.saveSettings();
   }).open();
+}
+
+/** A stable hue for a name, so each person keeps their colour on every card. */
+function hue(name: string): number {
+  let h = 0;
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
 }
