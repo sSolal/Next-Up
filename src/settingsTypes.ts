@@ -39,6 +39,8 @@ export interface FieldNames {
   followups: string;
   /** on people: `invite` when the first contact is a LinkedIn invite */
   via: string;
+  /** on people: the circle they belong to (`advisor`, `network`…); a circle keeps them in the People tab */
+  circle: string;
 }
 
 /** "Ask the vault": local model over a deterministic digest of the vault. */
@@ -91,8 +93,8 @@ export interface PeoplePrefs {
   tab: "people" | "discovery";
   /** owners shown: names, `me`, `none`; empty = everyone */
   owners: string[];
-  /** stages shown in the People tab (`none` = not in the funnel); empty = all */
-  stages: string[];
+  /** circles shown in the People tab (`none` = no circle); empty = all */
+  circles: string[];
   /** tags shown; empty = all */
   tags: string[];
   recall: "all" | "late" | "week" | "none";
@@ -103,7 +105,7 @@ export interface PeoplePrefs {
   folded: Record<string, boolean>;
 }
 
-export const DEFAULT_PEOPLE: PeoplePrefs = { tab: "people", owners: [], stages: [], tags: [], recall: "all", sort: "next", showInvites: false, folded: {} };
+export const DEFAULT_PEOPLE: PeoplePrefs = { tab: "people", owners: [], circles: [], tags: [], recall: "all", sort: "next", showInvites: false, folded: {} };
 export const BOARD_TAB_IDS: BoardTabId[] = ["dive", "plan"];
 
 /** The Plan tab: its week and the backlog of undated tasks beside it. */
@@ -232,6 +234,7 @@ export const DEFAULT_FIELDS: FieldNames = {
   stage: "stage",
   followups: "followups",
   via: "via",
+  circle: "circle",
 };
 
 /** The short status list: to do, in progress (shown as Open on the board), one day, finished, abandoned. */
@@ -337,7 +340,7 @@ function mergePeople(raw: unknown): PeoplePrefs {
   return {
     tab: pick(p.tab, ["people", "discovery"], d.tab),
     owners: strs(p.owners),
-    stages: strs(p.stages),
+    circles: strs(p.circles),
     tags: strs(p.tags),
     recall: pick(p.recall, ["all", "late", "week", "none"], d.recall),
     sort: pick(p.sort, ["next", "last", "recent", "name"], d.sort),

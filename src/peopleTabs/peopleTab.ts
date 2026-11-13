@@ -1,11 +1,10 @@
 import { setIcon } from "obsidian";
 import { crmComparator } from "../crm.ts";
-import { STAGES } from "../funnel.ts";
 import type { PeoplePrefs } from "../settingsTypes.ts";
 import type { BoardTab, TabHost } from "../boardTabs/tab.ts";
 import { peopleChips, searchBox } from "../boardTabs/filterBar.ts";
 import { type CardHost, renderPersonCard } from "../personCard.ts";
-import { addPersonButton, filterPeople, personOwners, tagPicker } from "./filters.ts";
+import { addPersonButton, filterPeople, personCircles, personOwners, tagPicker } from "./filters.ts";
 
 const RECALLS: { id: PeoplePrefs["recall"]; label: string }[] = [
   { id: "all", label: "All" },
@@ -21,7 +20,10 @@ const SORTS: { id: PeoplePrefs["sort"]; label: string }[] = [
   { id: "name", label: "Name" },
 ];
 
-/** Everyone, in one list: filter by owner, stage, tag, recall; pending LinkedIn invites stay folded at the bottom. */
+/**
+ * The network: everyone out of the discovery funnel, plus those we keep from it (a `circle`). Filter by owner, circle,
+ * tag, recall; pending LinkedIn invites stay folded at the bottom.
+ */
 export class PeopleTab implements BoardTab {
   id = "people";
   label = "People";
@@ -48,22 +50,22 @@ export class PeopleTab implements BoardTab {
     const p = this.prefs;
     peopleChips(bar, this.host, p, personOwners(this.host));
 
-    const stages = bar.createDiv({ cls: "nu-board-people" });
+    const circles = bar.createDiv({ cls: "nu-board-people" });
     const chip = (label: string, on: boolean, click: () => void) => {
-      const c = stages.createSpan({ cls: "nu-board-chip", text: label });
+      const c = circles.createSpan({ cls: "nu-board-chip", text: label });
       c.toggleClass("is-active", on);
       c.addEventListener("click", click);
     };
     const flip = (id: string) => {
-      p.stages = p.stages.includes(id) ? p.stages.filter((x) => x !== id) : [...p.stages, id];
+      p.circles = p.circles.includes(id) ? p.circles.filter((x) => x !== id) : [...p.circles, id];
       void this.host.save();
     };
-    chip("Any stage", !p.stages.length, () => {
-      p.stages = [];
+    chip("Any circle", !p.circles.length, () => {
+      p.circles = [];
       void this.host.save();
     });
-    for (const s of STAGES) chip(s.label, p.stages.includes(s.id), () => flip(s.id));
-    chip("Not in funnel", p.stages.includes("none"), () => flip("none"));
+    for (const c of personCircles(this.host)) chip(c, p.circles.includes(c), () => flip(c));
+    chip("No circle", p.circles.includes("none"), () => flip("none"));
 
     tagPicker(bar, this.host, p);
 
@@ -103,7 +105,7 @@ export class PeopleTab implements BoardTab {
     const p = this.prefs;
     const { today, me } = this.host.ctx();
     const last = (x: Parameters<typeof plugin.people.last>[0]) => plugin.people.last(x, today);
-    const all = filterPeople(plugin.people.loadIndex().people, { ...p, text: this.text }, me, today).sort(crmComparator(p.sort, last));
+    const all = filterPeople(plugin.people.loadIndex().people, { ...p, text: this.text, audience: "people" }, me, today).sort(crmComparator(p.sort, last));
     const invites = all.filter((x) => x.invite && x.stage === "contacted");
     const main = all.filter((x) => !invites.includes(x));
     this.shown = new Set(all.map((x) => x.path));

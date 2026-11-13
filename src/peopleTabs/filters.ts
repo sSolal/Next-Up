@@ -1,6 +1,6 @@
 /* What the People view's tabs share: filtering people, the tag picker, the add button. */
 import { Menu, setIcon } from "obsidian";
-import type { PersonData } from "../crm.ts";
+import { type PersonData, circlesOf, inPeople } from "../crm.ts";
 import { addDays } from "../model.ts";
 import type { PeoplePrefs } from "../settingsTypes.ts";
 import type { TabHost } from "../boardTabs/tab.ts";
@@ -18,8 +18,10 @@ export interface PeopleFilter {
   owners: string[];
   tags: string[];
   text: string;
-  /** stages (`none` = not in the funnel); empty = all */
-  stages?: string[];
+  /** who the tab is about: `people` = out of the funnel or in a circle; `funnel` = has a stage; empty = everyone */
+  audience?: "people" | "funnel";
+  /** circles (`none` = no circle); empty = all */
+  circles?: string[];
   recall?: PeoplePrefs["recall"];
 }
 
@@ -30,7 +32,9 @@ export function filterPeople(people: PersonData[], f: PeopleFilter, me: string, 
     if (!ownerMatch(p.owner, f.owners, me)) return false;
     if (f.tags.length && !f.tags.some((t) => p.tags.includes(t))) return false;
     if (text && ![p.name, p.org, p.role, p.summary, p.contact].some((x) => !!x && x.toLowerCase().includes(text))) return false;
-    if (f.stages?.length && !f.stages.some((s) => (s === "none" ? !p.stage : p.stage === s))) return false;
+    if (f.audience === "people" && !inPeople(p)) return false;
+    if (f.audience === "funnel" && !p.stage) return false;
+    if (f.circles?.length && !f.circles.some((c) => (same(c, "none") ? !p.circle : !!p.circle && same(p.circle, c)))) return false;
     switch (f.recall) {
       case "late":
         return !!p.next && !p.never && p.next < today;
@@ -79,3 +83,5 @@ export function addPersonButton(bar: HTMLElement, host: TabHost) {
 export function personOwners(host: TabHost): string[] {
   return [...new Set(host.plugin.people.loadIndex().people.map((p) => p.owner).filter((x): x is string => !!x))];
 }
+
+export const personCircles = (host: TabHost) => circlesOf(host.plugin.people.loadIndex().people);

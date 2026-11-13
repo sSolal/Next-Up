@@ -3,8 +3,9 @@ import { type Component, Menu, Notice, type TFile, setIcon } from "obsidian";
 import type NextUpPlugin from "./main.ts";
 import { type TaskData, isoDate } from "./model.ts";
 import { dueLabel } from "./query.ts";
-import { type CrmCtx, type PersonData, NEVER, ageLabel, contactHref, lastClass, nextClass, nextLabel } from "./crm.ts";
+import { type CrmCtx, type PersonData, NEVER, circlesOf, ageLabel, contactHref, lastClass, nextClass, nextLabel } from "./crm.ts";
 import { type Stage, STAGES, drop, dueAction, followUpSent, replied, setStage, splitRoleOrg, stageLabel, startContact } from "./funnel.ts";
+import { hue } from "./color.ts";
 import { ContactModal, type PersonCapture, PersonCaptureModal, StringSuggestModal, TextModal } from "./modals.ts";
 
 /** Drag data type of a person card (its path). */
@@ -42,6 +43,10 @@ export function renderPersonCard(parent: HTMLElement, host: CardHost, p: PersonD
   const open = opts.tasks ?? [];
   const node = parent.createDiv({ cls: "nu-node" });
   const card = node.createDiv({ cls: "nu-row nu-card nu-person" });
+  if (p.owner) {
+    card.addClass("has-owner");
+    card.style.setProperty("--nu-hue", String(hue(p.owner)));
+  }
   card.toggleClass("is-compact", !!opts.compact);
   const expanded = !opts.compact && !!host.tasks?.isOpen(p);
   if (opts.draggable) {
@@ -75,18 +80,26 @@ export function renderPersonCard(parent: HTMLElement, host: CardHost, p: PersonD
   if (!opts.compact) {
     for (const tag of p.tags) if (!host.hideTags?.has(tag)) chips.createSpan({ cls: "nu-chip nu-tag", text: `#${tag}` });
     if (p.stage && !host.hideStage) chips.createSpan({ cls: `nu-chip nu-stage is-${p.stage}`, text: stageLabel(p.stage) });
+    if (p.circle) {
+      const c = chips.createSpan({ cls: "nu-chip nu-circle", attr: { "aria-label": `In the ${p.circle} circle: kept in People` } });
+      setIcon(c.createSpan({ cls: "nu-chip-icon" }), "circle-dot");
+      c.appendText(p.circle);
+    }
   }
 
   // what is due next: the funnel's step, or a plain recall
   const action = dueAction(ctx.settings, p, ctx.today);
-  const nextChip = chips.createSpan({ cls: `nu-chip nu-next ${nextClass(p.next, ctx)}` });
-  if (action) nextChip.addClass(`is-${action.kind}`);
-  setIcon(nextChip.createSpan({ cls: "nu-chip-icon" }), action?.kind === "drop" ? "user-x" : action?.kind === "follow-up" ? "send" : p.never ? "bell-off" : "alarm-clock");
-  const when = p.next ? nextLabel(p.next, ctx.today) : p.never ? "no recall" : "recall…";
-  nextChip.appendText(action && action.kind !== "recall" ? `${action.label} · ${when}` : when);
-  nextChip.setAttr("aria-label", p.next ? `Next contact ${p.next}: click to change` : p.never ? "No need to get back to them: click to change" : "Plan the next contact");
-  if (!p.next) nextChip.addClass(p.never ? "is-never" : "is-empty");
-  nextChip.addEventListener("click", () => recall(plugin, p));
+  // nothing to plan before a first contact: no "recall…" placeholder until then
+  if (p.next || p.never || last) {
+    const nextChip = chips.createSpan({ cls: `nu-chip nu-next ${nextClass(p.next, ctx)}` });
+    if (action) nextChip.addClass(`is-${action.kind}`);
+    setIcon(nextChip.createSpan({ cls: "nu-chip-icon" }), action?.kind === "drop" ? "user-x" : action?.kind === "follow-up" ? "send" : p.never ? "bell-off" : "alarm-clock");
+    const when = p.next ? nextLabel(p.next, ctx.today) : p.never ? "no recall" : "recall…";
+    nextChip.appendText(action && action.kind !== "recall" ? `${action.label} · ${when}` : when);
+    nextChip.setAttr("aria-label", p.next ? `Next contact ${p.next}: click to change` : p.never ? "No need to get back to them: click to change" : "Plan the next contact");
+    if (!p.next) nextChip.addClass(p.never ? "is-never" : "is-empty");
+    nextChip.addEventListener("click", () => recall(plugin, p));
+  }
 
   if (!opts.compact) {
     const lastChip = chips.createSpan({ cls: `nu-chip nu-last ${lastClass(last?.date, ctx)}` });
@@ -107,7 +120,14 @@ export function renderPersonCard(parent: HTMLElement, host: CardHost, p: PersonD
     chip.appendText(`${open.length} · ${first.name}${first.due ? ` (${dueLabel(first.due, ctx.today)})` : ""}`);
     if (host.tasks) chip.addEventListener("click", () => host.tasks?.setOpen(p, !expanded));
   }
-  if (p.owner && p.owner.toLowerCase() !== ctx.me.toLowerCase()) chips.createSpan({ cls: "nu-chip nu-owner", text: p.owner[0].toUpperCase(), attr: { "aria-label": `Followed by ${p.owner}` } });
+  const owner = chips.createSpan({ cls: "nu-chip nu-owner nu-assignee", text: p.owner ?? "owner?", attr: { "aria-label": p.owner ? `Followed by ${p.owner}: click to change` : "Nobody follows this person: click to set" } });
+  if (p.owner) owner.style.setProperty("--nu-hue", String(hue(p.owner)));
+  else owner.addClass("is-none");
+  if (p.owner && p.owner.toLowerCase() === ctx.me.toLowerCase()) owner.addClass("is-me");
+  owner.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    pickOwner(plugin, p);
+  });
   const contact = contactHref(p.contact);
   if (contact) {
     const a = chips.createEl("a", { cls: "nu-chip nu-contact", href: contact.href, attr: { "aria-label": p.contact ?? "" } });
@@ -213,7 +233,8 @@ function showMenu(ev: MouseEvent, host: CardHost, p: PersonData, expanded: boole
   menu.addItem((i) =>
     i.setTitle("Stage…").setIcon("filter").onClick(() => {
       const out = "Not in the funnel";
-      const labels = [...STAGES.map((x) => `${x.id === p.stage ? "✓ " : "   "}${x.label}`), `${p.stage ? "   " : "✓ "}${out}`];
+      // a lead by default (nothing on record) can't leave the funnel by losing its stage: give it a circle instead
+      const labels = [...STAGES.map((x) => `${x.id === p.stage ? "✓ " : "   "}${x.label}`), ...(p.stageDerived ? [] : [`${p.stage ? "   " : "✓ "}${out}`])];
       new StringSuggestModal(app, labels, (picked) => {
         const label = picked.replace(/^(✓ |\s+)/, "");
         const st = STAGES.find((x) => x.label === label);
@@ -235,7 +256,14 @@ function showMenu(ev: MouseEvent, host: CardHost, p: PersonData, expanded: boole
       }, "Toggle a tag, or type a new one").open();
     }),
   );
-  menu.addItem((i) => i.setTitle("Assign…").setIcon("user").onClick(() => new StringSuggestModal(app, store.teamMembers(), (who) => void store.assign(f, who), "Who follows this person?").open()));
+  menu.addItem((i) => i.setTitle("Owner…").setIcon("user").onClick(() => pickOwner(plugin, p)));
+  menu.addItem((i) =>
+    i.setTitle(p.circle ? `Circle: ${p.circle}…` : "Add to People…").setIcon("circle-dot").onClick(() => {
+      const circles = circlesOf(plugin.people.loadIndex().people);
+      new StringSuggestModal(app, circles, (c) => void store.update(f, { [plugin.settings.fields.circle]: c.trim() || undefined }), "Their circle (advisor, network…): kept in People").open();
+    }),
+  );
+  if (p.circle) menu.addItem((i) => i.setTitle("Remove from People").setIcon("circle-off").onClick(() => void store.update(f, { [plugin.settings.fields.circle]: undefined })));
   menu.addItem((i) => i.setTitle("Summary…").setIcon("text").onClick(() => new TextModal(app, `Who is ${p.name}, in one line?`, p.summary ?? "", (v) => void store.update(f, { [plugin.settings.fields.summary]: v })).open()));
   menu.addItem((i) => i.setTitle("Rename…").setIcon("pencil").onClick(() => new TextModal(app, "Rename", p.name, (v) => void store.rename(f, v)).open()));
   menu.addSeparator();
@@ -243,12 +271,23 @@ function showMenu(ev: MouseEvent, host: CardHost, p: PersonData, expanded: boole
   menu.showAtMouseEvent(ev);
 }
 
+/** The team, and whoever already owns someone. */
+function owners(plugin: NextUpPlugin): string[] {
+  const people = plugin.people.loadIndex().people;
+  return [...new Set([...plugin.store.teamMembers(), ...people.map((p) => p.owner).filter((x): x is string => !!x)])].sort();
+}
+
+export function pickOwner(plugin: NextUpPlugin, p: PersonData) {
+  const f = fileOf(plugin, p);
+  if (f) new StringSuggestModal(plugin.app, owners(plugin), (who) => void plugin.store.assign(f, who.trim() || undefined), "Who follows this person?").open();
+}
+
 /* ---------- capture ---------- */
 
 /** The Capture person dialog; each person it gives becomes a note (an existing name is only opened). */
 export function capturePerson(plugin: NextUpPlugin, init: Partial<PersonCapture> = {}) {
   const people = plugin.people.loadIndex().people;
-  const team = [...new Set([...plugin.store.teamMembers(), ...people.map((p) => p.owner).filter((x): x is string => !!x)])].sort();
+  const team = owners(plugin);
   const tags = [...new Set(people.flatMap((p) => p.tags))];
   new PersonCaptureModal(plugin.app, { owner: plugin.settings.me || undefined, ...init }, team, tags, (c) => void createCaptured(plugin, c)).open();
 }

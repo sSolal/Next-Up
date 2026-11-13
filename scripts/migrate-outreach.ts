@@ -4,14 +4,14 @@
  *   node scripts/migrate-outreach.ts <vault> [--apply]
  * Without --apply, prints what it would do. Cards that link a note, or whose name is already a note, update
  * that note (empty fields filled, tags merged); the others become notes in the people folder from the template.
- * People already contacted get `next_contact: today` (when they have none): we don't know when the message
- * went out, so they show up as due. Lines that are not a person go to the CRM note under "## To sort", and the
+ * People already contacted get no `next_contact`: we don't know when the message went out (mark the next
+ * follow-up sent from their card). Lines that are not a person go to the CRM note under "## To sort", and the
  * board is renamed "(archive)". Idempotent on names.
  */
-import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { type OutreachCard, parseOutreachBoard } from "../src/funnel.ts";
-import { isoDate } from "../src/model.ts";
+import { fmValue, setFm, tagsOf, walk } from "./fm.ts";
 
 const [vault, ...flags] = process.argv.slice(2);
 if (!vault) {
@@ -24,58 +24,6 @@ const ARCHIVE = join(vault, "Whale/Network/Discovery Outreach (archive).md");
 const PEOPLE = join(vault, "Whale/Network/People");
 const TEMPLATE = join(vault, "Whale/Resources/Templates/Person (CRM).md");
 const CRM = join(vault, "Whale/Network/CRM.md");
-const today = isoDate(new Date());
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const e of readdirSync(dir)) {
-    if (e.startsWith(".")) continue;
-    const p = join(dir, e);
-    if (statSync(p).isDirectory()) walk(p, out);
-    else if (p.endsWith(".md")) out.push(p);
-  }
-  return out;
-}
-
-/** YAML scalar: plain when safe, quoted otherwise. */
-function yaml(v: string | number | string[]): string {
-  if (Array.isArray(v)) return `[${v.map((x) => yaml(x)).join(", ")}]`;
-  if (typeof v === "number") return String(v);
-  return /^[\p{L}\p{N}][\p{L}\p{N} .'’&()/_-]*$/u.test(v) && !/^(yes|no|true|false|null|~)$/i.test(v) ? v : JSON.stringify(v);
-}
-
-const FM = /^---\r?\n([\s\S]*?)\r?\n---/;
-
-function fmValue(text: string, key: string): string | undefined {
-  const m = text.match(FM)?.[1].match(new RegExp(`^${key}:[ \\t]*(.*)$`, "m"));
-  return m ? m[1].trim() : undefined;
-}
-
-/** Set a top-level key (replacing its line and any list items under it), or add it at the end. */
-function setFm(text: string, key: string, value: string | number | string[]): string {
-  const m = text.match(FM);
-  if (!m) return `---\n${key}: ${yaml(value)}\n---\n${text}`;
-  const lines = m[1].split(/\r?\n/);
-  const i = lines.findIndex((l) => l.startsWith(`${key}:`));
-  const line = `${key}: ${yaml(value)}`;
-  if (i < 0) lines.push(line);
-  else {
-    let j = i + 1;
-    while (j < lines.length && /^\s+(-|\S)/.test(lines[j]) && !/^\S/.test(lines[j])) j++;
-    lines.splice(i, j - i, line);
-  }
-  return text.replace(FM, `---\n${lines.join("\n")}\n---`);
-}
-
-function tagsOf(text: string): string[] {
-  const m = text.match(FM)?.[1];
-  if (!m) return [];
-  const inline = m.match(/^tags:[ \t]*\[(.*)\]\s*$/m);
-  if (inline) return inline[1].split(",").map((x) => x.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-  const block = m.match(/^tags:[ \t]*\n((?:[ \t]+-.*\n?)*)/m);
-  if (block) return block[1].split("\n").map((x) => x.replace(/^\s*-\s*/, "").trim()).filter(Boolean);
-  const plain = fmValue(text, "tags");
-  return plain ? plain.split(/[,\s]+/).filter(Boolean) : [];
-}
 
 function fill(text: string, c: OutreachCard, isNew: boolean): string {
   const empty = (k: string) => !fmValue(text, k) || fmValue(text, k) === '""';
@@ -88,10 +36,8 @@ function fill(text: string, c: OutreachCard, isNew: boolean): string {
   for (const [k, v] of [["owner", c.owner], ["contact", c.contact], ["role", c.role], ["org", c.org], ["summary", c.summary]] as const) {
     if (v && empty(k)) t = setFm(t, k, v);
   }
-  if (c.stage === "contacted") {
-    if (empty("followups")) t = setFm(t, "followups", 0);
-    if (empty("next_contact")) t = setFm(t, "next_contact", today);
-  }
+  // no next_contact: we don't know when the message went out, and a recall needs a last contact to count from
+  if (c.stage === "contacted" && empty("followups")) t = setFm(t, "followups", 0);
   if (c.stage === "dropped" && empty("next_contact")) t = setFm(t, "next_contact", "never");
   return t;
 }

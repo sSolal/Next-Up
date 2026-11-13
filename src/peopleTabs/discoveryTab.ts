@@ -68,7 +68,7 @@ export class DiscoveryTab implements BoardTab {
     const s = plugin.settings;
     const { today, me } = this.host.ctx();
     const p = this.prefs;
-    const people = filterPeople(plugin.people.loadIndex().people, { owners: p.owners, tags: p.tags, text: this.text }, me, today).filter((x) => !!x.stage);
+    const people = filterPeople(plugin.people.loadIndex().people, { owners: p.owners, tags: p.tags, text: this.text, audience: "funnel" }, me, today);
     this.shown = new Set(people.map((x) => x.path));
     const isDue = (x: PersonData) => !!dueAction(s, x, today)?.due;
     const order = (a: PersonData, b: PersonData) => Number(isDue(b)) - Number(isDue(a)) || (a.next ?? "9999").localeCompare(b.next ?? "9999") || a.name.localeCompare(b.name);

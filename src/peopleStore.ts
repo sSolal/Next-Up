@@ -1,5 +1,5 @@
 import { Notice, TFile, normalizePath } from "obsidian";
-import { type Interaction, type LastContact, type PersonData, appendLogLine, effectiveLast, personFromFrontmatter } from "./crm.ts";
+import { type Interaction, type LastContact, type PersonData, appendLogLine, deriveStage, effectiveLast, personFromFrontmatter } from "./crm.ts";
 import { fillPlaceholders, isoDate, parseDate, safeFileName } from "./model.ts";
 import type { TaskStore } from "./store.ts";
 
@@ -83,6 +83,7 @@ export class PeopleStore {
         }
       }
     }
+    for (const p of people) deriveStage(p, !!interactions.get(p.path)?.length);
     this.cache = { people, byPath: new Map(people.map((p) => [p.path, p])), interactions };
     return this.cache;
   }

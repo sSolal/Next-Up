@@ -26,6 +26,10 @@ export interface PersonData {
   never: boolean;
   /** discovery funnel stage, when in the funnel */
   stage?: Stage;
+  /** `stage` is not in the note: nothing on record, so a lead (see `deriveStage`) */
+  stageDerived?: boolean;
+  /** the circle they belong to: in the People tab whatever their stage */
+  circle?: string;
   /** follow-ups sent since the first message */
   followups: number;
   /** first contact was a LinkedIn invite, no message yet */
@@ -91,11 +95,36 @@ export function personFromFrontmatter(fm: Record<string, unknown>, path: string,
     next: parseDate(fm[f.nextContact]),
     never: String(fm[f.nextContact] ?? "").trim().toLowerCase() === NEVER,
     stage: stageOf(fm[f.stage]),
+    circle: str(fm[f.circle]),
     followups: Math.max(0, Math.floor(parseNumber(fm[f.followups]) ?? 0)),
     invite: String(fm[f.via] ?? "").trim().toLowerCase() === "invite",
     props,
     mtime,
   };
+}
+
+/** No stage and no contact on record (no `last_contact`, no dated note linking them): a lead. Mutates `p`. */
+export function deriveStage(p: PersonData, hasInteractions: boolean): PersonData {
+  if (!p.stage && !p.lastField && !hasInteractions) {
+    p.stage = "lead";
+    p.stageDerived = true;
+  }
+  return p;
+}
+
+/** Someone we were ever in touch with: only they can have a next contact planned. */
+export function everContacted(p: PersonData, hasInteractions: boolean): boolean {
+  return !!p.lastField || hasInteractions;
+}
+
+/** The People tab's crowd: everyone out of the funnel, and those we put in a circle (met at a discovery meeting, kept). */
+export const inPeople = (p: PersonData) => !p.stage || !!p.circle;
+
+/** Circles in use, for the People tab's chips and the "Add to People" picker. */
+export function circlesOf(people: PersonData[]): string[] {
+  const out = new Map<string, string>();
+  for (const p of people) if (p.circle && !out.has(p.circle.toLowerCase())) out.set(p.circle.toLowerCase(), p.circle);
+  return [...out.values()].sort((a, b) => a.localeCompare(b));
 }
 
 /** The most recent of the person's own field and the dated notes linking them (future meetings don't count). */

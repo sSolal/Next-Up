@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS } from "../src/settingsTypes.ts";
-import { type PersonData, personFromFrontmatter } from "../src/crm.ts";
+import { type PersonData, circlesOf, deriveStage, inPeople, personFromFrontmatter } from "../src/crm.ts";
 import { drop, dueAction, nameFromLinkedIn, followUpSent, parseOutreachBoard, recallsOn, replied, setStage, splitRoleOrg, stageOf, startContact } from "../src/funnel.ts";
 
 const S = DEFAULT_SETTINGS;
@@ -193,4 +193,34 @@ test("nameFromLinkedIn: the slug, decoded, without its id", () => {
   assert.equal(nameFromLinkedIn("https://www.linkedin.com/in/thomas-untereiner-49139917/"), "Thomas Untereiner");
   assert.equal(nameFromLinkedIn("https://www.linkedin.com/in/st%C3%A9phane-georg%C3%A9/?isSelfProfile=false"), "Stéphane Georgé");
   assert.equal(nameFromLinkedIn("https://example.org/someone"), undefined);
+});
+
+test("someone with nothing on record is a lead, without it being written", () => {
+  const bare = deriveStage(person("Ann"), false);
+  assert.equal(bare.stage, "lead");
+  assert.equal(bare.stageDerived, true);
+  // a contact on record, or a meeting linking them: out of the funnel as before
+  assert.equal(deriveStage(person("Bob", { last_contact: "2026-10-01" }), false).stage, undefined);
+  assert.equal(deriveStage(person("Cid"), true).stage, undefined);
+  // a stage in the note wins
+  const met = deriveStage(person("Dee", { stage: "met" }), false);
+  assert.equal(met.stage, "met");
+  assert.equal(met.stageDerived, undefined);
+  // dropping a lead by default on Lead writes nothing
+  assert.deepEqual(setStage(S, bare, "lead", TODAY), {});
+});
+
+test("the People tab: out of the funnel, or kept in a circle", () => {
+  assert.equal(inPeople(person("Ann")), true);
+  assert.equal(inPeople(person("Bob", { stage: "met" })), false);
+  assert.equal(inPeople(person("Cid", { stage: "met", circle: "advisor" })), true);
+  assert.equal(inPeople(deriveStage(person("Dee"), false)), false);
+  const circles = circlesOf([person("A", { circle: "Advisor" }), person("B", { circle: "advisor" }), person("C", { circle: "friend" }), person("D")]);
+  assert.deepEqual(circles, ["Advisor", "friend"]);
+});
+
+test("a first message sets the last contact and the first follow-up", () => {
+  const patch = startContact(S, TODAY);
+  assert.equal(patch[S.fields.lastContact], TODAY);
+  assert.equal(patch[S.fields.nextContact], "2026-11-14");
 });
