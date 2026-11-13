@@ -357,3 +357,15 @@ button.nu-week-this { height: auto; padding: 3px 10px; font-size: var(--font-ui-
 .theme-dark .nu-person.has-owner { box-shadow: inset 3px 0 0 hsl(var(--nu-hue, 0), 55%, 60%); }
 .nu-chip.nu-owner.is-none { border: 1px dashed var(--background-modifier-border-hover); box-shadow: none; }
 .nu-chip.nu-circle { color: var(--text-muted); }
+
+/* Use cases */
+.nu-usecases { overflow-y: auto; padding: 0 4px 16px; }
+.nu-usecases > .nu-rows { display: flex; flex-direction: column; gap: 6px; max-width: 900px; }
+.nu-usecase { padding: 8px 12px 8px 6px; gap: 10px; }
+.nu-usecase .nu-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.nu-usecase .nu-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.nu-usecase-rank { flex: 0 0 2em; text-align: right; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.nu-usecase-crit { cursor: pointer; font-variant-numeric: tabular-nums; }
+.nu-usecase-crit:hover { color: var(--text-normal); }
+.nu-usecase-crit.is-default { opacity: 0.5; }
+.nu-usecase-score { flex: 0 0 auto; font-size: 1.15em; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }

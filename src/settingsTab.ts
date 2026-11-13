@@ -86,6 +86,9 @@ export class NextUpSettingTab extends PluginSettingTab {
     });
     this.number(containerEl, "Cold after (days)", "A last contact older than this shows in orange (and matches `last: stale`).", s.staleDays, (v) => (s.staleDays = Math.max(1, Math.round(v))));
 
+    new Setting(containerEl).setName("Use cases").setDesc("Any note with `type: use-case`, scored in the Use cases view.").setHeading();
+    this.text(containerEl, "Use cases folder", "Where new use cases are created.", s.useCasesFolder, (v) => (s.useCasesFolder = v));
+
     new Setting(containerEl).setName("Show advanced settings").addToggle((t) =>
       t.setValue(this.showAdvanced).onChange((v) => {
         this.showAdvanced = v;
@@ -103,6 +106,7 @@ export class NextUpSettingTab extends PluginSettingTab {
     this.text(containerEl, "Waiting status", "Status of a task waiting on someone (`waiting_on:`).", s.waitingStatus, (v) => (s.waitingStatus = v || "waiting"));
 
     this.text(containerEl, "Person type value", "Value of the `type` field that marks a person note.", s.personType, (v) => (s.personType = v || "person"));
+    this.text(containerEl, "Use case type value", "Value of the `type` field that marks a use case note.", s.useCaseType, (v) => (s.useCaseType = v || "use-case"));
     this.text(containerEl, "Contact fields", "Comma-separated keys of dated notes (meetings, interviews) that link people. Such a note with a past `date` counts as a contact.", s.interactionFields.join(", "), (v) => (s.interactionFields = list(v)));
 
     new Setting(containerEl)

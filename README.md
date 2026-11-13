@@ -303,6 +303,24 @@ circle: advisor       # kept in the People tab
 
 **Capture a person** (command, *+ Person* in the People view, *Person…* in Capture): name — or paste their LinkedIn URL, the name is guessed from it —, contact, one line *role @ org*, who follows them, tags, and how far you got (*Invite sent*, *Message sent*, *Lead*, or *In People* with a circle). `Enter` adds; *Add another* (`Ctrl/Cmd+Enter`) keeps the dialog open, owner, tags and stage kept, for a batch after a LinkedIn session.
 
+## Use cases
+
+A use case is any note with `type: use-case`. *Open use cases* (ribbon ◎ or the command) lists them all, ranked by score; *+ Use case* or *Capture a use case…* asks for a name and creates it in the *Use cases folder* (default `Use cases`), every criterion at `0-10`.
+
+```yaml
+---
+type: use-case
+broken: 2-5      # a range…
+urgent: 7        # …or a single value
+imposed: 0-10
+neglected: 4-8
+conscious: 0-10
+critical: 6-9
+---
+```
+
+**Score** = `(broken + urgent + imposed) × neglected × (conscious + critical)`. Each criterion is an interval (`2-5`, `2 – 5`; a single value is `7-7`); a missing or unreadable one counts as `0-10` and shows faded. The score is an interval too: every minimum gives the minimum, every maximum the maximum (`0 – 6000` when nothing is set). Use cases are **sorted by the max** of their score (then the min), not by the average, so a promising but uncertain one stays on top until you narrow it down. Click a criterion on a card to change it.
+
 ## Capture
 
 *Capture…* (ribbon ⊕, command, or the *+ Capture* button) asks for a title and a kind. Keys `1`–`9` switch kind while the title is empty (`Ctrl/Cmd` + digit at any time), `Enter` creates.
@@ -350,11 +368,11 @@ seam for agent loops: progress reports, drift tracking, forgotten projects.
 
 ## Commands
 
-*Open board*, *Archive / unarchive this project*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Plan this task…*, *Plan this task today*, *Estimate this task…*, *Set my hours for today…* / *for tomorrow…*, *Move this task to a board column…* (when board tags are set), *Toggle a tag on this task*, *Migrate tasks to v0.4…*, *In touch with this person today…*, *Next contact with this person…*, *Open people*, *Capture a person…*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
+*Open board*, *Archive / unarchive this project*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Plan this task…*, *Plan this task today*, *Estimate this task…*, *Set my hours for today…* / *for tomorrow…*, *Move this task to a board column…* (when board tags are set), *Toggle a tag on this task*, *Migrate tasks to v0.4…*, *In touch with this person today…*, *Next contact with this person…*, *Open people*, *Capture a person…*, *Open use cases*, *Capture a use case…*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
 
 ## Settings
 
-Always visible: **I am**, **Default task folder**, **Board tags** (default none), **Statuses**, **Done statuses**, **Team note**, **Task template**, **Capture kinds**, **Default people folder**, **Person template**, **Follow-ups (days)**, **Cold after (days)**, and under *Time and review*: **Hours in a day**, **Ask how long it took**, **Review again after (days)**, **Stalled after (days)**, **Parked statuses**, **Inbox: ignore notes with**. *Show advanced settings* reveals *Due soon* days, the todo/doing status names, field names and *Ask the vault*. Folds (which tasks are collapsed) are remembered per device.
+Always visible: **I am**, **Default task folder**, **Board tags** (default none), **Statuses**, **Done statuses**, **Team note**, **Task template**, **Capture kinds**, **Default people folder**, **Person template**, **Follow-ups (days)**, **Cold after (days)**, **Use cases folder**, and under *Time and review*: **Hours in a day**, **Ask how long it took**, **Review again after (days)**, **Stalled after (days)**, **Parked statuses**, **Inbox: ignore notes with**. *Show advanced settings* reveals *Due soon* days, the todo/doing status names, field names and *Ask the vault*. Folds (which tasks are collapsed) are remembered per device.
 
 ## Install
 
@@ -374,7 +392,7 @@ npm run build   # type-check + minified build
 npm run kb -- digest --vault <vault>   # run the CLI from source
 ```
 
-Symlink the repo into `<vault>/.obsidian/plugins/next-up` to test in a vault. Releases: tag `x.y.z` → GitHub Action builds and attaches the three files.
+Symlink the repo into `<vault>/.obsidian/plugins/next-up` to test in a vault. To look at the plugin in a real Obsidian on a safe copy of a vault, driven by a script, with screenshots: [docs/visual-testing.md](docs/visual-testing.md). Releases: tag `x.y.z` → GitHub Action builds and attaches the three files.
 
 ## Licence
 

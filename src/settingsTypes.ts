@@ -189,6 +189,10 @@ export interface NextUpSettings {
   /** Days before each follow-up after a first message; after the last one, the funnel offers to drop. */
   followUpDays: number[];
   people: PeoplePrefs;
+  /** Value of `type` that marks a note as a use case. */
+  useCaseType: string;
+  /** Folder for new use cases. */
+  useCasesFolder: string;
 }
 
 export const DEFAULT_KB: KbConfig = {
@@ -278,6 +282,8 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   board: { ...DEFAULT_BOARD },
   followUpDays: [2, 7, 7],
   people: { ...DEFAULT_PEOPLE },
+  useCaseType: "use-case",
+  useCasesFolder: "Use cases",
 };
 
 /** Keys of older versions (scoring, snooze, revisit…) dropped on load. */

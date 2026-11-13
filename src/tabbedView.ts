@@ -76,6 +76,8 @@ export abstract class TabbedView extends ItemView {
     if (!this.bodyEl) return;
     const current = this.tab;
     this.tabsEl.empty();
+    // a single tab needs no strip
+    this.tabsEl.toggle(this.tabs.length > 1);
     for (const t of this.tabs) {
       const b = this.tabsEl.createSpan({ cls: "nu-board-tab" });
       setIcon(b.createSpan({ cls: "nu-chip-icon" }), t.icon);

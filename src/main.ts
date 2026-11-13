@@ -21,12 +21,16 @@ import { BoardView, VIEW_TYPE_BOARD } from "./boardView.ts";
 import { PeopleView, VIEW_TYPE_PEOPLE } from "./peopleView.ts";
 import { TabbedView } from "./tabbedView.ts";
 import { capturePerson } from "./personCard.ts";
+import { UseCaseStore } from "./useCaseStore.ts";
+import { UseCasesView, VIEW_TYPE_USE_CASES, captureUseCase } from "./useCasesView.ts";
 
 export default class NextUpPlugin extends Plugin {
   settings: NextUpSettings = DEFAULT_SETTINGS;
   store!: TaskStore;
   /** People for `next-up-crm` blocks. */
   people!: PeopleStore;
+  /** Use cases (`type: use-case`), scored. */
+  useCases!: UseCaseStore;
   /** "Ask the vault": digest, tools and local model. Future agent loops call `kb.ask`. */
   kb!: KbService;
   /** The task being dragged between next-up blocks, if any. */
@@ -38,6 +42,7 @@ export default class NextUpPlugin extends Plugin {
     await this.loadSettings();
     this.store = new TaskStore(this.app, () => this.settings);
     this.people = new PeopleStore(this.store);
+    this.useCases = new UseCaseStore(this.store);
     this.kb = new KbService(new ObsidianNoteSource(this.app, () => this.settings.kb), () => this.settings, requestUrlTransport);
     this.addSettingTab(new NextUpSettingTab(this.app, this));
     this.hideOrderProperty();
@@ -45,9 +50,11 @@ export default class NextUpPlugin extends Plugin {
     this.registerView(VIEW_TYPE_ASK, (leaf) => new AskVaultView(leaf, this));
     this.registerView(VIEW_TYPE_BOARD, (leaf) => new BoardView(leaf, this));
     this.registerView(VIEW_TYPE_PEOPLE, (leaf) => new PeopleView(leaf, this));
+    this.registerView(VIEW_TYPE_USE_CASES, (leaf) => new UseCasesView(leaf, this));
     const invalidate = () => {
       this.store.invalidate();
       this.people.invalidate();
+      this.useCases.invalidate();
       this.scheduleKbInvalidate();
     };
     this.registerEvent(this.app.metadataCache.on("changed", invalidate));
@@ -95,16 +102,19 @@ export default class NextUpPlugin extends Plugin {
 
     this.addRibbonIcon("kanban", "Open board", () => void this.openBoard());
     this.addRibbonIcon("users", "Open people", () => void this.openView(VIEW_TYPE_PEOPLE));
+    this.addRibbonIcon("target", "Open use cases", () => void this.openView(VIEW_TYPE_USE_CASES));
     this.addRibbonIcon("plus-circle", "Capture", () => this.openCapture());
 
     this.addCommand({ id: "open-board", name: "Open board", callback: () => void this.openBoard() });
     this.addCommand({ id: "open-people", name: "Open people (CRM and discovery funnel)", callback: () => void this.openView(VIEW_TYPE_PEOPLE) });
     this.addCommand({ id: "capture-person", name: "Capture a person…", callback: () => capturePerson(this) });
-    // links in notes: obsidian://next-up?view=people (or board), &tab=discovery
+    this.addCommand({ id: "open-use-cases", name: "Open use cases", callback: () => void this.openView(VIEW_TYPE_USE_CASES) });
+    this.addCommand({ id: "capture-use-case", name: "Capture a use case…", callback: () => captureUseCase(this) });
+    // links in notes: obsidian://next-up?view=people (or board, use-cases), &tab=discovery
     this.registerObsidianProtocolHandler("next-up", (params) => {
       const people = params.view === "people";
       if (people && params.tab) this.settings.people.tab = params.tab === "discovery" ? "discovery" : "people";
-      void this.openView(people ? VIEW_TYPE_PEOPLE : VIEW_TYPE_BOARD);
+      void this.openView(people ? VIEW_TYPE_PEOPLE : params.view === "use-cases" ? VIEW_TYPE_USE_CASES : VIEW_TYPE_BOARD);
     });
     this.addCommand({ id: "capture", name: "Capture…", callback: () => this.openCapture() });
     this.addCommand({ id: "new-task", name: "New task", callback: () => this.openCapture({ task: true }) });
@@ -335,6 +345,7 @@ export default class NextUpPlugin extends Plugin {
     await this.saveData(this.settings);
     this.store?.invalidate();
     this.people?.invalidate();
+    this.useCases?.invalidate();
     this.kb?.invalidate();
     this.hideOrderProperty();
     for (const cb of this.settingsListeners) cb();
