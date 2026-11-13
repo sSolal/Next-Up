@@ -605,13 +605,15 @@ export interface PersonCapture {
   owner?: string;
   tags: string[];
   start: PersonStart;
+  /** with `start: none`: the circle that keeps them in People */
+  circle?: string;
 }
 
 const STARTS: { id: PersonStart; label: string; tip: string }[] = [
   { id: "invite", label: "Invite sent", tip: "LinkedIn invite sent: follow up in a couple of days" },
   { id: "message", label: "Message sent", tip: "First message sent: the follow-ups start" },
   { id: "lead", label: "Lead", tip: "To reach out to" },
-  { id: "none", label: "Not in funnel", tip: "Just a contact" },
+  { id: "none", label: "In People", tip: "Not in the funnel: in a circle (advisor, shareholder…), listed in People" },
 ];
 
 /**
@@ -622,14 +624,16 @@ export class PersonCaptureModal extends Modal {
   private v: PersonCapture;
   private team: string[];
   private allTags: string[];
+  private circles: string[];
   private onSubmit: (p: PersonCapture) => void;
   private inputs: HTMLInputElement[] = [];
 
-  constructor(app: App, init: Partial<PersonCapture>, team: string[], allTags: string[], onSubmit: (p: PersonCapture) => void) {
+  constructor(app: App, init: Partial<PersonCapture>, team: string[], allTags: string[], circles: string[], onSubmit: (p: PersonCapture) => void) {
     super(app);
     this.v = { name: "", tags: [], start: "invite", ...init };
     this.team = team;
     this.allTags = allTags;
+    this.circles = circles;
     this.onSubmit = onSubmit;
   }
 
@@ -674,9 +678,15 @@ export class PersonCaptureModal extends Modal {
       b.addEventListener("click", () => pickStart(s.id));
       return { b, id: s.id };
     });
+    // In People: which circle (the ones in use are suggested)
+    const circle = field(`Circle${this.circles.length ? ` (${this.circles.join(", ")})` : " (advisor, shareholder…)"}`, this.v.circle, (x) => (this.v.circle = x));
+    const list = contentEl.createEl("datalist", { attr: { id: "next-up-circles" } });
+    for (const c of this.circles) list.createEl("option", { value: c });
+    circle.setAttr("list", "next-up-circles");
     const pickStart = (id: PersonStart) => {
       this.v.start = id;
       for (const x of startBtns) x.b.toggleClass("is-active", x.id === id);
+      circle.toggle(id === "none");
     };
     pickStart(this.v.start);
 
@@ -724,10 +734,10 @@ export class PersonCaptureModal extends Modal {
       new Notice("Give them a name.");
       return;
     }
-    this.onSubmit({ ...this.v, name, contact: this.v.contact?.trim() || undefined, roleOrg: this.v.roleOrg?.trim() || undefined });
+    this.onSubmit({ ...this.v, name, contact: this.v.contact?.trim() || undefined, roleOrg: this.v.roleOrg?.trim() || undefined, circle: this.v.circle?.trim() || undefined });
     if (!another) return this.close();
     // the same session usually shares owner, tags and stage: keep them
-    this.v = { name: "", tags: this.v.tags, start: this.v.start, owner: this.v.owner };
+    this.v = { name: "", tags: this.v.tags, start: this.v.start, owner: this.v.owner, circle: this.v.circle };
     this.onOpen();
   }
 

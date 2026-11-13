@@ -18,7 +18,7 @@ export interface PeopleFilter {
   owners: string[];
   tags: string[];
   text: string;
-  /** who the tab is about: `people` = out of the funnel or in a circle; `funnel` = has a stage; empty = everyone */
+  /** who the tab is about: `people` = in a circle; `funnel` = has a stage (leads by default included); empty = everyone */
   audience?: "people" | "funnel";
   /** circles (`none` = no circle); empty = all */
   circles?: string[];

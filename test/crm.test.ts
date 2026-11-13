@@ -158,3 +158,14 @@ test("contactHref: email, url, phone", () => {
   assert.deepEqual(contactHref("06 84 54 58 99"), { href: "tel:0684545899", kind: "phone" });
   assert.equal(contactHref("ask Christian"), undefined);
 });
+
+test("addToWho: under ## Who, at the end of the section, without repeating the note", async () => {
+  const { addToWho, whoLines } = await import("../src/crm.ts");
+  assert.deepEqual(whoLines("CEO", "Bibo", " hot drinks "), ["CEO @ Bibo", "hot drinks"]);
+  assert.deepEqual(whoLines(undefined, "BASF"), ["BASF"]);
+  const body = "> help\n\n## Who\n[Ann](https://x)\nCEO @ Bibo\n\n\n## Why\n- ok\n";
+  assert.equal(addToWho(body, ["ceo  @ bibo"]), body);
+  assert.equal(addToWho(body, ["hot drinks"]), "> help\n\n## Who\n[Ann](https://x)\nCEO @ Bibo\nhot drinks\n\n\n## Why\n- ok\n");
+  assert.equal(addToWho("> help\n\nnotes\n", ["CEO"]), "> help\n\n## Who\nCEO\n\nnotes\n");
+  assert.equal(addToWho("", ["CEO"]), "## Who\nCEO\n");
+});

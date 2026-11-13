@@ -279,12 +279,12 @@ A few blocks make a CRM page: *To recall* (`next: before +7d`), *Gone cold* (`la
 
 *Open people* (ribbon 👥, command, or a link `obsidian://next-up?view=people`, `&tab=discovery`) opens the CRM in a tab of its own:
 
-- **People**: the network, not the funnel: everyone without a `stage`, plus the people you keep from discovery. Most people met in discovery don't belong here; to keep one, `⋯` → *Add to People…* gives them a `circle` (`advisor`, `network`, anything), and they stay listed whatever their stage. Filter by who follows them, circle (*No circle* too), tags, recall (*Late*, *This week*, *No date*) and text; sort by next contact, coldest, warmest or name. Pending LinkedIn invites are folded at the bottom (*N invites pending*), one line each.
+- **People**: the people who matter beyond discovery (shareholders, advisors…): only those in a `circle`. Everyone starts in the funnel; most people met in discovery don't belong here. To keep one, `⋯` → *Add to People…* gives them a `circle` (`shareholder`, `advisor`, anything), and they stay listed whatever their stage. **Network · Everyone** switches to all people, funnel included, to navigate and fix profiles. Filter by who follows them, circle (*No circle* too), tags, recall (*Late*, *This week*, *No date*) and text; sort by next contact, coldest, warmest or name. Pending LinkedIn invites are folded at the bottom (*N invites pending*), one line each.
 - **Discovery**: the funnel as a Kanban, a column per `stage`: **Lead · Contacted · In contact · Meeting · Met · Dropped** (Met and Dropped folded). Drag a card to move it; what is due comes first in each column. The Lead column adds leads in one line.
 
 ### The discovery funnel
 
-`stage:` puts a person in the funnel. Someone with no `stage` and nothing on record (no `last_contact`, no dated note linking them) is a **Lead** too, without it being written. Moving someone to **Contacted** (or capturing them as *Invite sent* / *Message sent*) starts the follow-ups: `last_contact` is set to today and `next_contact` **2 days** later. On their card:
+`stage:` says where a person is in the funnel. Everyone is in it by default: no `stage` and no `circle` is a **Lead**, without it being written. Only a `circle` takes someone out (*Not in the funnel* in the *Stage…* menu is offered then). Moving someone to **Contacted** (or capturing them as *Invite sent* / *Message sent*) starts the follow-ups: `last_contact` is set to today and `next_contact` **2 days** later. On their card:
 
 - **Sent** (➤): a follow-up went out, still no reply: `followups` + 1, `last_contact` today, the next one **7 days** later; after the second, 7 days later the card asks *no reply · drop?*
 - **Replied**: stage *In contact*, the timer stops, and it asks when to get back to them (and what was said, into `## Log`).
@@ -301,7 +301,7 @@ circle: advisor       # kept in the People tab
 
 **Who follows them**: every card is tinted with its owner's colour (a stable hue from the name, the same as on the task board) and carries their name; a card nobody follows says *owner?*, click it to set one. A next contact counts from a contact: until someone was in touch, the card shows no *recall…* placeholder (*Next contact…* stays in `⋯`).
 
-**Capture a person** (command, *+ Person* in the People view, *Person…* in Capture): name — or paste their LinkedIn URL, the name is guessed from it —, contact, one line *role @ org*, who follows them, tags, and how far you got (*Invite sent*, *Message sent*, *Lead*, *Not in funnel*). `Enter` adds; *Add another* (`Ctrl/Cmd+Enter`) keeps the dialog open, owner, tags and stage kept, for a batch after a LinkedIn session.
+**Capture a person** (command, *+ Person* in the People view, *Person…* in Capture): name — or paste their LinkedIn URL, the name is guessed from it —, contact, one line *role @ org*, who follows them, tags, and how far you got (*Invite sent*, *Message sent*, *Lead*, or *In People* with a circle). `Enter` adds; *Add another* (`Ctrl/Cmd+Enter`) keeps the dialog open, owner, tags and stage kept, for a batch after a LinkedIn session.
 
 ## Capture
 

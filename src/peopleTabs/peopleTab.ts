@@ -21,8 +21,8 @@ const SORTS: { id: PeoplePrefs["sort"]; label: string }[] = [
 ];
 
 /**
- * The network: everyone out of the discovery funnel, plus those we keep from it (a `circle`). Filter by owner, circle,
- * tag, recall; pending LinkedIn invites stay folded at the bottom.
+ * The people who matter beyond discovery: those in a `circle` (or, switched to Everyone, all of them, to navigate and
+ * fix profiles). Filter by owner, circle, tag, recall; pending LinkedIn invites stay folded at the bottom.
  */
 export class PeopleTab implements BoardTab {
   id = "people";
@@ -49,6 +49,18 @@ export class PeopleTab implements BoardTab {
   mount(bar: HTMLElement, body: HTMLElement) {
     const p = this.prefs;
     peopleChips(bar, this.host, p, personOwners(this.host));
+
+    // the network by default; everyone (funnel included) to see it all and fix profiles
+    const scope = bar.createDiv({ cls: "next-up-segmented nu-board-modes" });
+    for (const [all, label] of [[false, "Network"], [true, "Everyone"]] as const) {
+      const b = scope.createSpan({ cls: "next-up-seg", text: label });
+      b.toggleClass("is-active", p.everyone === all);
+      b.setAttr("aria-label", all ? "Everyone, discovery funnel included" : "People in a circle");
+      b.addEventListener("click", () => {
+        p.everyone = all;
+        void this.host.save();
+      });
+    }
 
     const circles = bar.createDiv({ cls: "nu-board-people" });
     const chip = (label: string, on: boolean, click: () => void) => {
@@ -105,7 +117,7 @@ export class PeopleTab implements BoardTab {
     const p = this.prefs;
     const { today, me } = this.host.ctx();
     const last = (x: Parameters<typeof plugin.people.last>[0]) => plugin.people.last(x, today);
-    const all = filterPeople(plugin.people.loadIndex().people, { ...p, text: this.text, audience: "people" }, me, today).sort(crmComparator(p.sort, last));
+    const all = filterPeople(plugin.people.loadIndex().people, { ...p, text: this.text, audience: p.everyone ? undefined : "people" }, me, today).sort(crmComparator(p.sort, last));
     const invites = all.filter((x) => x.invite && x.stage === "contacted");
     const main = all.filter((x) => !invites.includes(x));
     this.shown = new Set(all.map((x) => x.path));

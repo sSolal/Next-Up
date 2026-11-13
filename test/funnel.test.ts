@@ -195,26 +195,26 @@ test("nameFromLinkedIn: the slug, decoded, without its id", () => {
   assert.equal(nameFromLinkedIn("https://example.org/someone"), undefined);
 });
 
-test("someone with nothing on record is a lead, without it being written", () => {
-  const bare = deriveStage(person("Ann"), false);
+test("no stage and no circle is a lead, without it being written", () => {
+  const bare = deriveStage(person("Ann"));
   assert.equal(bare.stage, "lead");
   assert.equal(bare.stageDerived, true);
-  // a contact on record, or a meeting linking them: out of the funnel as before
-  assert.equal(deriveStage(person("Bob", { last_contact: "2026-10-01" }), false).stage, undefined);
-  assert.equal(deriveStage(person("Cid"), true).stage, undefined);
+  // contact history doesn't take them out of the funnel: only a circle does
+  assert.equal(deriveStage(person("Bob", { last_contact: "2026-10-01" })).stage, "lead");
+  assert.equal(deriveStage(person("Cid", { circle: "advisor" })).stage, undefined);
   // a stage in the note wins
-  const met = deriveStage(person("Dee", { stage: "met" }), false);
+  const met = deriveStage(person("Dee", { stage: "met" }));
   assert.equal(met.stage, "met");
   assert.equal(met.stageDerived, undefined);
   // dropping a lead by default on Lead writes nothing
   assert.deepEqual(setStage(S, bare, "lead", TODAY), {});
 });
 
-test("the People tab: out of the funnel, or kept in a circle", () => {
-  assert.equal(inPeople(person("Ann")), true);
+test("the People tab: only those in a circle", () => {
+  assert.equal(inPeople(deriveStage(person("Ann"))), false);
   assert.equal(inPeople(person("Bob", { stage: "met" })), false);
   assert.equal(inPeople(person("Cid", { stage: "met", circle: "advisor" })), true);
-  assert.equal(inPeople(deriveStage(person("Dee"), false)), false);
+  assert.equal(inPeople(deriveStage(person("Dee", { circle: "shareholder" }))), true);
   const circles = circlesOf([person("A", { circle: "Advisor" }), person("B", { circle: "advisor" }), person("C", { circle: "friend" }), person("D")]);
   assert.deepEqual(circles, ["Advisor", "friend"]);
 });

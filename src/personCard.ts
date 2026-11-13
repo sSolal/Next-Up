@@ -3,7 +3,7 @@ import { type Component, Menu, Notice, type TFile, setIcon } from "obsidian";
 import type NextUpPlugin from "./main.ts";
 import { type TaskData, isoDate } from "./model.ts";
 import { dueLabel } from "./query.ts";
-import { type CrmCtx, type PersonData, NEVER, circlesOf, ageLabel, contactHref, lastClass, nextClass, nextLabel } from "./crm.ts";
+import { type CrmCtx, type PersonData, NEVER, circlesOf, whoLines, ageLabel, contactHref, lastClass, nextClass, nextLabel } from "./crm.ts";
 import { type Stage, STAGES, drop, dueAction, followUpSent, replied, setStage, splitRoleOrg, stageLabel, startContact } from "./funnel.ts";
 import { hue } from "./color.ts";
 import { ContactModal, type PersonCapture, PersonCaptureModal, StringSuggestModal, TextModal } from "./modals.ts";
@@ -233,8 +233,8 @@ function showMenu(ev: MouseEvent, host: CardHost, p: PersonData, expanded: boole
   menu.addItem((i) =>
     i.setTitle("Stage…").setIcon("filter").onClick(() => {
       const out = "Not in the funnel";
-      // a lead by default (nothing on record) can't leave the funnel by losing its stage: give it a circle instead
-      const labels = [...STAGES.map((x) => `${x.id === p.stage ? "✓ " : "   "}${x.label}`), ...(p.stageDerived ? [] : [`${p.stage ? "   " : "✓ "}${out}`])];
+      // only someone in a circle can leave the funnel; without one, no stage means a lead again
+      const labels = [...STAGES.map((x) => `${x.id === p.stage && !p.stageDerived ? "✓ " : "   "}${x.label}`), ...(p.circle ? [`${p.stage ? "   " : "✓ "}${out}`] : [])];
       new StringSuggestModal(app, labels, (picked) => {
         const label = picked.replace(/^(✓ |\s+)/, "");
         const st = STAGES.find((x) => x.label === label);
@@ -264,7 +264,6 @@ function showMenu(ev: MouseEvent, host: CardHost, p: PersonData, expanded: boole
     }),
   );
   if (p.circle) menu.addItem((i) => i.setTitle("Remove from People").setIcon("circle-off").onClick(() => void store.update(f, { [plugin.settings.fields.circle]: undefined })));
-  menu.addItem((i) => i.setTitle("Summary…").setIcon("text").onClick(() => new TextModal(app, `Who is ${p.name}, in one line?`, p.summary ?? "", (v) => void store.update(f, { [plugin.settings.fields.summary]: v })).open()));
   menu.addItem((i) => i.setTitle("Rename…").setIcon("pencil").onClick(() => new TextModal(app, "Rename", p.name, (v) => void store.rename(f, v)).open()));
   menu.addSeparator();
   menu.addItem((i) => i.setTitle("Open in new tab").setIcon("file-plus").onClick(() => void app.workspace.openLinkText(p.path, host.sourcePath, true)));
@@ -289,7 +288,7 @@ export function capturePerson(plugin: NextUpPlugin, init: Partial<PersonCapture>
   const people = plugin.people.loadIndex().people;
   const team = owners(plugin);
   const tags = [...new Set(people.flatMap((p) => p.tags))];
-  new PersonCaptureModal(plugin.app, { owner: plugin.settings.me || undefined, ...init }, team, tags, (c) => void createCaptured(plugin, c)).open();
+  new PersonCaptureModal(plugin.app, { owner: plugin.settings.me || undefined, ...init }, team, tags, circlesOf(people), (c) => void createCaptured(plugin, c)).open();
 }
 
 async function createCaptured(plugin: NextUpPlugin, c: PersonCapture) {
@@ -303,12 +302,12 @@ async function createCaptured(plugin: NextUpPlugin, c: PersonCapture) {
   const ro = splitRoleOrg(c.roleOrg ?? "");
   const props: Record<string, string> = {};
   if (c.contact) props[f.contact] = c.contact;
-  if (ro.role) props[f.role] = ro.role;
-  if (ro.org) props[f.org] = ro.org;
-  if (ro.summary) props[f.summary] = ro.summary;
   if (c.start === "lead") props[f.stage] = "lead";
+  if (c.start === "none") props[f.circle] = c.circle?.trim() || "network";
   try {
     const file = await plugin.people.createPerson({ title: c.name, tags: c.tags, owner: c.owner, props });
+    // who they are goes in the note, not the frontmatter
+    await plugin.people.addWho(file, whoLines(ro.role, ro.org, ro.summary));
     const today = isoDate(new Date());
     if (c.start === "invite" || c.start === "message") await plugin.people.applyFunnel(file, startContact(s, today, c.start === "invite"), c.start === "invite" ? "LinkedIn invite sent" : "first message sent");
     new Notice(`Added ${file.basename}`);

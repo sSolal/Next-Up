@@ -11,6 +11,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { type OutreachCard, parseOutreachBoard } from "../src/funnel.ts";
+import { addToWho, whoLines } from "../src/crm.ts";
 import { fmValue, setFm, tagsOf, walk } from "./fm.ts";
 
 const [vault, ...flags] = process.argv.slice(2);
@@ -33,8 +34,14 @@ function fill(text: string, c: OutreachCard, isNew: boolean): string {
   if (c.invite) t = setFm(t, "via", "invite");
   const tags = [...new Set([...tagsOf(t).map((x) => x.toLowerCase()), ...c.tags])];
   if (tags.length) t = setFm(t, "tags", tags);
-  for (const [k, v] of [["owner", c.owner], ["contact", c.contact], ["role", c.role], ["org", c.org], ["summary", c.summary]] as const) {
+  for (const [k, v] of [["owner", c.owner], ["contact", c.contact]] as const) {
     if (v && empty(k)) t = setFm(t, k, v);
+  }
+  // role, org and summary go in the note's ## Who, not the frontmatter
+  if (!isNew) {
+    const m = t.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+    const head = m ? m[0] : "";
+    t = head + addToWho(t.slice(head.length), whoLines(c.role, c.org, c.summary));
   }
   // no next_contact: we don't know when the message went out, and a recall needs a last contact to count from
   if (c.stage === "contacted" && empty("followups")) t = setFm(t, "followups", 0);

@@ -93,6 +93,8 @@ export interface PeoplePrefs {
   tab: "people" | "discovery";
   /** owners shown: names, `me`, `none`; empty = everyone */
   owners: string[];
+  /** the People tab lists everyone, funnel included (off: only the network) */
+  everyone: boolean;
   /** circles shown in the People tab (`none` = no circle); empty = all */
   circles: string[];
   /** tags shown; empty = all */
@@ -105,7 +107,7 @@ export interface PeoplePrefs {
   folded: Record<string, boolean>;
 }
 
-export const DEFAULT_PEOPLE: PeoplePrefs = { tab: "people", owners: [], circles: [], tags: [], recall: "all", sort: "next", showInvites: false, folded: {} };
+export const DEFAULT_PEOPLE: PeoplePrefs = { tab: "people", owners: [], everyone: false, circles: [], tags: [], recall: "all", sort: "next", showInvites: false, folded: {} };
 export const BOARD_TAB_IDS: BoardTabId[] = ["dive", "plan"];
 
 /** The Plan tab: its week and the backlog of undated tasks beside it. */
@@ -340,6 +342,7 @@ function mergePeople(raw: unknown): PeoplePrefs {
   return {
     tab: pick(p.tab, ["people", "discovery"], d.tab),
     owners: strs(p.owners),
+    everyone: typeof p.everyone === "boolean" ? p.everyone : d.everyone,
     circles: strs(p.circles),
     tags: strs(p.tags),
     recall: pick(p.recall, ["all", "late", "week", "none"], d.recall),

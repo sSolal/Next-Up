@@ -8,13 +8,33 @@
  *   `never` is kept.
  * - Keys the People view writes itself are removed when empty or stale: `stage`, `followups` (outside Contacted),
  *   `via` (other than `invite`), `circle`, `last_contact`, `next_contact`. The keys a human fills in stay, even empty.
+ * - `role`, `org` and `summary` leave the frontmatter: their text goes under `## Who` in the note (not repeated
+ *   when the note already says it). `circle` values are trimmed.
  * - The person template loses those keys too, and its help line says who writes them.
  * Idempotent.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { isoDate } from "../src/model.ts";
-import { FM, fmKeys, fmRaw, fmValue, isEmpty, removeFm, walk } from "./fm.ts";
+import { addToWho, whoLines } from "../src/crm.ts";
+import { FM, fmKeys, fmRaw, fmValue, isEmpty, removeFm, setFm, walk } from "./fm.ts";
+
+/** A scalar as written: `"quoted"` or `'quoted'` → its text. */
+function unquote(v: string | undefined): string | undefined {
+  if (isEmpty(v)) return undefined;
+  const s = v!.trim();
+  if (s.startsWith('"')) {
+    try {
+      return String(JSON.parse(s)).trim() || undefined;
+    } catch {
+      return s.slice(1, -1).trim() || undefined;
+    }
+  }
+  if (s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1).replace(/''/g, "'").trim() || undefined;
+  return s;
+}
+/** Out of the frontmatter, into the note's ## Who. */
+const DESCRIBE = ["role", "org", "summary"];
 
 const [vault, ...flags] = process.argv.slice(2);
 if (!vault) {
@@ -45,6 +65,7 @@ for (const [, t] of texts) {
 
 let changed = 0;
 let recalls = 0;
+let moved = 0;
 const kept: string[] = [];
 for (const [path, text] of texts) {
   if (!isPerson(text)) continue;
@@ -65,6 +86,24 @@ for (const [path, text] of texts) {
       recalls++;
     } else kept.push(`${name} (${next})`);
   }
+  // who they are: into the note, out of the frontmatter
+  const desc = DESCRIBE.map((k) => (fmKeys(t).includes(k) ? unquote(fmValue(t, k)) : undefined));
+  if (DESCRIBE.some((k) => fmKeys(t).includes(k))) {
+    const lines = whoLines(desc[0], desc[1], desc[2]);
+    const m = t.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+    const head = m ? m[0] : "";
+    const body = addToWho(t.slice(head.length), lines);
+    const added = body.split(/\r?\n/).length - t.slice(head.length).split(/\r?\n/).length;
+    t = head + body;
+    for (const k of DESCRIBE) if (fmKeys(t).includes(k)) t = removeFm(t, k);
+    out.push(`-${DESCRIBE.filter((k) => fmKeys(text).includes(k)).join(",")}${lines.length ? (added ? ` → ## Who: ${JSON.stringify(lines)}` : " (already in the note)") : ""}`);
+    if (added) moved++;
+  }
+  const circle = fmValue(t, "circle");
+  if (!isEmpty(circle) && unquote(circle) !== circle) {
+    t = setFm(t, "circle", unquote(circle)!);
+    out.push(`circle ${circle} → ${unquote(circle)}`);
+  }
   for (const k of MANAGED) {
     if (!fmKeys(t).includes(k)) continue;
     const val = fmValue(t, k);
@@ -77,16 +116,17 @@ for (const [path, text] of texts) {
   console.log(`  ~ ${name}: ${out.join(" ")}`);
   if (apply) writeFileSync(path, t);
 }
-console.log(`\n${changed} notes tidied, ${recalls} past next contacts removed from people never contacted.`);
+console.log(`\n${changed} notes tidied, ${moved} descriptions moved into ## Who, ${recalls} past next contacts removed from people never contacted.`);
 if (kept.length) console.log(`Kept, planned ahead though never contacted: ${kept.join(", ")}`);
 
 // the template: what a new person starts with
 const tpl = readFileSync(TEMPLATE, "utf8");
 let nt = tpl;
 for (const k of MANAGED) if (fmKeys(nt).includes(k) && isEmpty(fmValue(nt, k))) nt = removeFm(nt, k);
+for (const k of DESCRIBE) if (fmKeys(nt).includes(k)) nt = removeFm(nt, k);
 nt = nt.replace(
   /^> `tags`:.*$/m,
-  "> `tags`: roles — prospect · advisor · funder · ecosystem (several allowed). `summary`: one line, who they are for us. `owner`: who follows them. The People view adds the rest when it means something: `last_contact` · `next_contact` (when we last spoke, when we get back to them), `stage` · `followups` · `via` (the discovery funnel), `circle` (kept in People once out of discovery).",
+  "> `tags`: roles — prospect · advisor · funder · ecosystem (several allowed). `owner`: who follows them. Who they are goes under ## Who, in the note. The People view adds the rest when it means something: `last_contact` · `next_contact` (when we last spoke, when we get back to them), `stage` · `followups` · `via` (the discovery funnel), `circle` (kept in People once out of discovery).",
 );
 if (nt !== tpl) {
   console.log(`Template: ${fmKeys(tpl).filter((k) => !fmKeys(nt).includes(k)).map((k) => "-" + k).join(" ")}, help line updated.`);

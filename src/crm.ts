@@ -26,7 +26,7 @@ export interface PersonData {
   never: boolean;
   /** discovery funnel stage, when in the funnel */
   stage?: Stage;
-  /** `stage` is not in the note: nothing on record, so a lead (see `deriveStage`) */
+  /** `stage` is not in the note, nor a circle: a lead by default (see `deriveStage`) */
   stageDerived?: boolean;
   /** the circle they belong to: in the People tab whatever their stage */
   circle?: string;
@@ -103,22 +103,55 @@ export function personFromFrontmatter(fm: Record<string, unknown>, path: string,
   };
 }
 
-/** No stage and no contact on record (no `last_contact`, no dated note linking them): a lead. Mutates `p`. */
-export function deriveStage(p: PersonData, hasInteractions: boolean): PersonData {
-  if (!p.stage && !p.lastField && !hasInteractions) {
+/**
+ * Everyone starts in the funnel: no stage and no circle is a lead. Only people put in a circle leave it (they are
+ * the People tab). Mutates `p`.
+ */
+export function deriveStage(p: PersonData): PersonData {
+  if (!p.stage && !p.circle) {
     p.stage = "lead";
     p.stageDerived = true;
   }
   return p;
 }
 
-/** Someone we were ever in touch with: only they can have a next contact planned. */
-export function everContacted(p: PersonData, hasInteractions: boolean): boolean {
-  return !!p.lastField || hasInteractions;
+/** "Role @ Org" and a summary as the lines that describe someone in the note's `## Who`. */
+export function whoLines(role?: string, org?: string, summary?: string): string[] {
+  const ro = role && org ? `${role} @ ${org}` : (role ?? org);
+  return [ro, summary].filter((x): x is string => !!x && !!x.trim()).map((x) => x.trim());
 }
 
-/** The People tab's crowd: everyone out of the funnel, and those we put in a circle (met at a discovery meeting, kept). */
-export const inPeople = (p: PersonData) => !p.stage || !!p.circle;
+const squash = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * The body of a person note with `lines` under `## Who` (created after a leading `>` note when missing), at the end
+ * of that section. A line already said in the note, give or take case and spaces, is not repeated.
+ */
+export function addToWho(body: string, lines: string[]): string {
+  const said = squash(body);
+  const add = lines.filter((l) => !said.includes(squash(l)));
+  if (!add.length) return body;
+  const nl = body.includes("\r\n") ? "\r\n" : "\n";
+  const rows = body.split(/\r?\n/);
+  const at = rows.findIndex((r) => /^##\s+Who\s*$/.test(r));
+  if (at < 0) {
+    let i = 0;
+    while (i < rows.length && (rows[i].startsWith(">") || !rows[i].trim())) i++;
+    const head = rows.slice(0, i);
+    while (head.length && !head[head.length - 1].trim()) head.pop();
+    return [...head, ...(head.length ? [""] : []), "## Who", ...add, "", ...rows.slice(i)].join(nl);
+  }
+  let end = at + 1;
+  while (end < rows.length && !/^#{1,2}\s/.test(rows[end])) end++;
+  // after the section's last non-empty line
+  let last = end - 1;
+  while (last > at && !rows[last].trim()) last--;
+  rows.splice(last + 1, 0, ...add);
+  return rows.join(nl);
+}
+
+/** The People tab's crowd: only those we put in a circle (shareholders, advisors, people kept from discovery). */
+export const inPeople = (p: PersonData) => !!p.circle;
 
 /** Circles in use, for the People tab's chips and the "Add to People" picker. */
 export function circlesOf(people: PersonData[]): string[] {
