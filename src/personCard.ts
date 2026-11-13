@@ -22,6 +22,8 @@ export interface CardHost {
   hideTags?: Set<string>;
   /** the stage chip is left out (the Discovery columns already say it) */
   hideStage?: boolean;
+  /** the owner filter shows only mine: my chip is left out */
+  hideMine?: boolean;
 }
 
 export interface CardOpts {
@@ -120,14 +122,17 @@ export function renderPersonCard(parent: HTMLElement, host: CardHost, p: PersonD
     chip.appendText(`${open.length} · ${first.name}${first.due ? ` (${dueLabel(first.due, ctx.today)})` : ""}`);
     if (host.tasks) chip.addEventListener("click", () => host.tasks?.setOpen(p, !expanded));
   }
-  const owner = chips.createSpan({ cls: "nu-chip nu-owner nu-assignee", text: p.owner ?? "owner?", attr: { "aria-label": p.owner ? `Followed by ${p.owner}: click to change` : "Nobody follows this person: click to set" } });
-  if (p.owner) owner.style.setProperty("--nu-hue", String(hue(p.owner)));
-  else owner.addClass("is-none");
-  if (p.owner && p.owner.toLowerCase() === ctx.me.toLowerCase()) owner.addClass("is-me");
-  owner.addEventListener("click", (ev) => {
-    ev.stopPropagation();
-    pickOwner(plugin, p);
-  });
+  const mine = !!p.owner && p.owner.toLowerCase() === ctx.me.toLowerCase();
+  if (!(mine && host.hideMine)) {
+    const owner = chips.createSpan({ cls: "nu-chip nu-owner nu-assignee", text: p.owner ?? "owner?", attr: { "aria-label": p.owner ? `Followed by ${p.owner}: click to change` : "Nobody follows this person: click to set" } });
+    if (p.owner) owner.style.setProperty("--nu-hue", String(hue(p.owner)));
+    else owner.addClass("is-none");
+    if (mine) owner.addClass("is-me");
+    owner.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      pickOwner(plugin, p);
+    });
+  }
   const contact = contactHref(p.contact);
   if (contact) {
     const a = chips.createEl("a", { cls: "nu-chip nu-contact", href: contact.href, attr: { "aria-label": p.contact ?? "" } });

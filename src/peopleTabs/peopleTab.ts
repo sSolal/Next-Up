@@ -3,6 +3,7 @@ import { crmComparator } from "../crm.ts";
 import type { PeoplePrefs } from "../settingsTypes.ts";
 import type { BoardTab, TabHost } from "../boardTabs/tab.ts";
 import { peopleChips, searchBox } from "../boardTabs/filterBar.ts";
+import { onlyMine } from "../board.ts";
 import { type CardHost, renderPersonCard } from "../personCard.ts";
 import { addPersonButton, filterPeople, personCircles, personOwners, tagPicker } from "./filters.ts";
 
@@ -50,12 +51,12 @@ export class PeopleTab implements BoardTab {
     const p = this.prefs;
     peopleChips(bar, this.host, p, personOwners(this.host));
 
-    // the network by default; everyone (funnel included) to see it all and fix profiles
+    // people in a circle by default; all people (funnel included) to see it all and fix profiles
     const scope = bar.createDiv({ cls: "next-up-segmented nu-board-modes" });
-    for (const [all, label] of [[false, "Network"], [true, "Everyone"]] as const) {
+    for (const [all, label] of [[false, "In a circle"], [true, "All people"]] as const) {
       const b = scope.createSpan({ cls: "next-up-seg", text: label });
       b.toggleClass("is-active", p.everyone === all);
-      b.setAttr("aria-label", all ? "Everyone, discovery funnel included" : "People in a circle");
+      b.setAttr("aria-label", all ? "All people, discovery funnel included" : "Only people in a circle");
       b.addEventListener("click", () => {
         p.everyone = all;
         void this.host.save();
@@ -124,7 +125,7 @@ export class PeopleTab implements BoardTab {
     const late = all.filter((x) => x.next && !x.never && x.next < today).length;
     this.sumEl.setText(`${all.length} ${all.length === 1 ? "person" : "people"}${late ? ` · ${late} late` : ""}`);
 
-    const host: CardHost = { plugin, sourcePath: "", hoverParent: plugin, hideTags: new Set(p.tags) };
+    const host: CardHost = { plugin, sourcePath: "", hoverParent: plugin, hideTags: new Set(p.tags), hideMine: onlyMine(p.owners, plugin.settings.me) };
     const rows = el.createDiv({ cls: "nu-rows" });
     for (const x of main) renderPersonCard(rows, host, x);
     if (!all.length) rows.createDiv({ cls: "nu-empty", text: "Nobody here." });

@@ -6,7 +6,9 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /** Everyone · me · each other owner · unassigned: toggles over `prefs.owners` (the board's by default); none on = everyone. */
 export function peopleChips(bar: HTMLElement, host: TabHost, prefs: { owners: string[] } = host.plugin.settings.board, extra: string[] = []) {
-  const el = bar.createDiv({ cls: "nu-board-people" });
+  // one group, labelled, so it reads as a single multi-choice filter
+  const el = bar.createDiv({ cls: "nu-board-people nu-owner-filter", attr: { "aria-label": "Whose: click several to combine" } });
+  el.createSpan({ cls: "nu-filter-label", text: "Owner" });
   const s = host.plugin.settings;
   const p = prefs;
   const me = s.me;

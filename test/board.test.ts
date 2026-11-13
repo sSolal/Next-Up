@@ -4,7 +4,7 @@ import { type GroupData, buildIndex } from "../src/model.ts";
 import { DEFAULT_SETTINGS, mergeSettings } from "../src/settingsTypes.ts";
 import { buildGroups } from "../src/plan.ts";
 import { columnOf, isLate } from "../src/columns.ts";
-import { type BoardFilter, boardColumns, filterConds, lateColumn } from "../src/board.ts";
+import { type BoardFilter, boardColumns, filterConds, lateColumn, onlyMine } from "../src/board.ts";
 import { type Ctx, type Query, Matcher, buildTree, movePatch, prefill } from "../src/query.ts";
 import { mk } from "./model.test.ts";
 
@@ -141,4 +141,13 @@ test("settings: simplified statuses by default, board prefs merged", () => {
   assert.equal(mergeSettings({ board: { mode: "nope" } }).board.mode, "when");
   assert.equal(mergeSettings({ board: { mode: "context" } }).board.mode, "when", "the context mode is gone");
   assert.deepEqual(mergeSettings({}).board.owners, ["me", "none"]);
+});
+
+test("onlyMine: the filter shows my cards (maybe with unassigned ones) and nobody else's", () => {
+  assert.equal(onlyMine(["me"], "Alice"), true);
+  assert.equal(onlyMine(["me", "none"], "Alice"), true);
+  assert.equal(onlyMine(["alice", "none"], "Alice"), true);
+  assert.equal(onlyMine([], "Alice"), false, "everyone");
+  assert.equal(onlyMine(["none"], "Alice"), false);
+  assert.equal(onlyMine(["me", "Bob"], "Alice"), false);
 });

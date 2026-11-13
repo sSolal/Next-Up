@@ -46,11 +46,9 @@ test("loadPluginData merges the plugin's data.json over defaults", async () => {
   assert.equal(s.me, "Alice");
   assert.equal(s.kb.model, DEFAULT_KB.model);
   assert.equal(s.fields.dependsOn, "depends_on");
-  assert.equal(s.homeNote, "Acme/Todo.md", "todoNote migrated to homeNote");
   assert.equal("todoNote" in s, false);
   assert.deepEqual(s.kb.aliases, [["Acme", "Rocket"]]);
   const none = await loadPluginData("/nonexistent");
   assert.equal(none.tasksFolder, "Tasks");
-  assert.equal(none.homeNote, "Home.md");
   assert.deepEqual(none.kb.aliases, [], "defaults are vault-neutral");
 });

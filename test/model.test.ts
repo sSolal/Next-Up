@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  splitLink,
   buildIndex,
   blockers,
   isBlocked,
@@ -169,9 +170,9 @@ test("fillPlaceholders, safeFileName", () => {
   assert.equal(safeFileName("  "), "Untitled");
 });
 
-test("mergeSettings migrates todoNote and drops removed keys", () => {
+test("mergeSettings drops removed keys", () => {
   const s = mergeSettings({ todoNote: "Team/Todo.md", snoozeDays: 2, nowMin: 3, weights: {}, somedayStatus: "someday", doneStatuses: ["done", "gone"], fields: { cost: "cost", importance: "importance", owner: "who" } });
-  assert.equal(s.homeNote, "Team/Todo.md");
+  assert.equal("homeNote" in s, false);
   assert.equal("todoNote" in s, false);
   assert.equal("snoozeDays" in s, false);
   assert.equal(s.fields.owner, "who");
@@ -183,6 +184,13 @@ test("mergeSettings migrates todoNote and drops removed keys", () => {
   assert.equal(s.fields.tags, "tags");
   assert.deepEqual(s.fold, {});
   assert.deepEqual(s.captureKinds, []);
-  assert.equal(mergeSettings({ todoNote: "Old.md", homeNote: "New.md" }).homeNote, "New.md");
-  assert.equal(mergeSettings(null).homeNote, "Home.md");
+  assert.equal("homeNote" in mergeSettings({ homeNote: "New.md" }), false);
+});
+
+test("splitLink names the note from the words and keeps the link", () => {
+  assert.deepEqual(splitLink("Read that https://drive.google.com/file/d/1oO/view"), { title: "Read that", url: "https://drive.google.com/file/d/1oO/view" });
+  assert.deepEqual(splitLink("Read that - https://example.com/a."), { title: "Read that", url: "https://example.com/a" });
+  assert.deepEqual(splitLink("https://example.com/a and summarise"), { title: "and summarise", url: "https://example.com/a" });
+  assert.deepEqual(splitLink("https://www.example.com/x?y=1"), { title: "Link (example.com)", url: "https://www.example.com/x?y=1" });
+  assert.deepEqual(splitLink("Call Bob 30m"), { title: "Call Bob 30m" });
 });

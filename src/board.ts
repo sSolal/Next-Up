@@ -27,6 +27,12 @@ function anyOf(atoms: Cond[]): Cond | undefined {
 
 const isNone = (x: string) => x.toLowerCase() === "none";
 
+/** The owner filter shows only my cards (and maybe unassigned ones): saying "me" on each card is noise. */
+export function onlyMine(owners: string[], me: string): boolean {
+  const mine = (x: string) => { const l = x.toLowerCase(); return l === "me" || (!!me && l === me.toLowerCase()); };
+  return owners.some(mine) && owners.every((x) => mine(x) || isNone(x));
+}
+
 /** The filter bar as query conditions: a single value stays a plain condition, so tasks added under it match it. */
 export function filterConds(f: BoardFilter): Cond[] {
   const out: Cond[] = [];

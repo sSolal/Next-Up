@@ -3,6 +3,7 @@ import type { PersonData } from "../crm.ts";
 import { type Stage, STAGES, dueAction } from "../funnel.ts";
 import type { BoardTab, TabHost } from "../boardTabs/tab.ts";
 import { peopleChips, searchBox } from "../boardTabs/filterBar.ts";
+import { onlyMine } from "../board.ts";
 import { type CardHost, PERSON_DRAG, moveToStage, renderPersonCard } from "../personCard.ts";
 import { addPersonButton, filterPeople, personOwners, tagPicker } from "./filters.ts";
 
@@ -77,7 +78,7 @@ export class DiscoveryTab implements BoardTab {
 
     const scroll = el.scrollLeft;
     el.empty();
-    const host: CardHost = { plugin, sourcePath: "", hoverParent: plugin, hideTags: new Set(p.tags), hideStage: true };
+    const host: CardHost = { plugin, sourcePath: "", hoverParent: plugin, hideTags: new Set(p.tags), hideStage: true, hideMine: onlyMine(p.owners, plugin.settings.me) };
     for (const st of STAGES) {
       const list = people.filter((x) => x.stage === st.id).sort(order);
       const col = el.createDiv({ cls: `nu-col nu-funnel-col is-${st.id}` });

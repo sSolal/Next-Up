@@ -40,6 +40,7 @@ export default class NextUpPlugin extends Plugin {
     this.people = new PeopleStore(this.store);
     this.kb = new KbService(new ObsidianNoteSource(this.app, () => this.settings.kb), () => this.settings, requestUrlTransport);
     this.addSettingTab(new NextUpSettingTab(this.app, this));
+    this.hideOrderProperty();
 
     this.registerView(VIEW_TYPE_ASK, (leaf) => new AskVaultView(leaf, this));
     this.registerView(VIEW_TYPE_BOARD, (leaf) => new BoardView(leaf, this));
@@ -92,13 +93,10 @@ export default class NextUpPlugin extends Plugin {
       ctx.addChild(new WeekBlock(this, el, source, ctx.sourcePath));
     });
 
-    this.addRibbonIcon("list-checks", "Open home", () => this.openHome());
     this.addRibbonIcon("kanban", "Open board", () => void this.openBoard());
     this.addRibbonIcon("users", "Open people", () => void this.openView(VIEW_TYPE_PEOPLE));
     this.addRibbonIcon("plus-circle", "Capture", () => this.openCapture());
 
-    // id kept from the "Todo" days so existing hotkeys still work
-    this.addCommand({ id: "open-todo", name: "Open home", callback: () => this.openHome() });
     this.addCommand({ id: "open-board", name: "Open board", callback: () => void this.openBoard() });
     this.addCommand({ id: "open-people", name: "Open people (CRM and discovery funnel)", callback: () => void this.openView(VIEW_TYPE_PEOPLE) });
     this.addCommand({ id: "capture-person", name: "Capture a person…", callback: () => capturePerson(this) });
@@ -250,6 +248,7 @@ export default class NextUpPlugin extends Plugin {
   }
 
   onunload() {
+    this.orderStyle?.remove();
     this.settingsListeners.clear();
     if (this.kbTimer) window.clearTimeout(this.kbTimer);
   }
@@ -323,20 +322,6 @@ export default class NextUpPlugin extends Plugin {
     await ws.revealLeaf(leaf);
   }
 
-  async openHome() {
-    const path = this.settings.homeNote;
-    if (!path) {
-      new Notice("Set the Home note in Next Up settings.");
-      return;
-    }
-    const existing = this.app.workspace.getLeavesOfType("markdown").find((l) => (l.view as MarkdownView).file?.path === path);
-    if (existing) {
-      this.app.workspace.revealLeaf(existing);
-      return;
-    }
-    await this.app.workspace.openLinkText(path, "", false);
-  }
-
   async loadSettings() {
     this.settings = mergeSettings(await this.loadData());
   }
@@ -351,6 +336,16 @@ export default class NextUpPlugin extends Plugin {
     this.store?.invalidate();
     this.people?.invalidate();
     this.kb?.invalidate();
+    this.hideOrderProperty();
     for (const cb of this.settingsListeners) cb();
+  }
+
+  private orderStyle?: HTMLStyleElement;
+
+  /** `order` is drag-and-drop bookkeeping, not something to read or edit: kept out of the Properties panel. */
+  private hideOrderProperty() {
+    this.orderStyle ??= document.head.createEl("style", { attr: { id: "next-up-hide-order" } });
+    const key = this.settings.fields.order.replace(/["\\]/g, "\\$&");
+    this.orderStyle.textContent = `.metadata-property[data-property-key="${key}"] { display: none; }`;
   }
 }

@@ -4,6 +4,7 @@ import { type TaskData, type TaskIndex, addDays, ancestors, childrenOf, descenda
 import { capacityMin } from "./settingsTypes.ts";
 import { formatDuration, splitEstimate } from "./duration.ts";
 import { effectiveProject, needsEstimate, remaining } from "./plan.ts";
+import { onlyMine } from "./board.ts";
 import { hue } from "./color.ts";
 import {
   type Ctx,
@@ -230,7 +231,10 @@ export class ListView {
         this.taskLink(crumbs, c);
       });
     }
-    this.taskLink(main, t).addClass("nu-name");
+    const name = this.taskLink(main, t);
+    name.addClass("nu-name");
+    // done cards on the board are one truncated line: the whole title on hover
+    if (done) name.setAttr("title", t.name);
 
     const chips = row.createDiv({ cls: "nu-chips" });
     if (!done && t.status !== s.todoStatus) {
@@ -279,6 +283,8 @@ export class ListView {
   /** On the board, every card says who has it (a colour per person, `me` included), or that nobody does; a click reassigns. */
   private renderOwnerChip(chips: HTMLElement, t: TaskData) {
     const mine = !!t.owner && t.owner.toLowerCase() === this.ctx.me.toLowerCase();
+    const owners = this.q.conds.flatMap((c) => (c.k === "owner" ? c.names : []));
+    if (mine && onlyMine(owners, this.ctx.me)) return;
     const chip = chips.createSpan({ cls: `nu-chip nu-owner nu-assignee${t.owner ? "" : " is-none"}${mine ? " is-me" : ""}`, attr: { "aria-label": "Click to assign" } });
     chips.prepend(chip);
     setIcon(chip.createSpan({ cls: "nu-chip-icon" }), t.owner ? "user" : "user-x");

@@ -376,6 +376,25 @@ export function fillPlaceholders(text: string, title: string, now: Date): string
     .replace(/\{\{\s*time\s*\}\}/gi, time);
 }
 
+/**
+ * A title with a link in it ("Read that https://…"): the words name the note, the link goes in its body.
+ * Only a link: the note is named after its site. No link: the title as is.
+ */
+export function splitLink(title: string): { title: string; url?: string } {
+  const m = title.match(/https?:\/\/[^\s<>"]+/i);
+  if (!m) return { title };
+  const url = m[0].replace(/[).,;:!?]+$/, "");
+  const rest = (title.slice(0, m.index) + " " + title.slice((m.index ?? 0) + m[0].length)).replace(/\s+/g, " ").replace(/[\s:—–-]+$/, "").trim();
+  if (rest) return { title: rest, url };
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    host = "";
+  }
+  return { title: host ? `Link (${host})` : "Link", url };
+}
+
 /** A title made safe for a file name. */
 export function safeFileName(title: string, fallback = "Untitled"): string {
   return title.replace(/[\\/:*?"<>|#^[\]]/g, "-").trim() || fallback;

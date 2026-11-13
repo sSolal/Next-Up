@@ -2,7 +2,7 @@ import { setIcon } from "obsidian";
 import type { TaskData } from "../model.ts";
 import { Matcher } from "../query.ts";
 import { type ListHost, ListView, editCapacity } from "../listView.ts";
-import { type BoardFilter, type ColumnDef, dayColumn, filterConds, backlogColumn } from "../board.ts";
+import { type BoardFilter, type ColumnDef, dayColumn, filterConds, backlogColumn, onlyMine } from "../board.ts";
 import { formatDuration } from "../duration.ts";
 import { hue } from "../color.ts";
 import { type DaySummary, MAX_PROJECTS_PER_DAY, NO_PROJECT, type ProjectMinutes, isoWeek, weekDays, weekSummary } from "../week.ts";
@@ -78,16 +78,20 @@ export class PlanTab implements BoardTab {
     return false;
   }
 
-  /** The people to get back to that day, as one-line cards above its tasks. */
-  private renderRecalls(el: HTMLElement, date: string) {
+  /** The people to get back to that day, as one-line cards after its tasks (before the add row): part of the day, not hideable. */
+  private renderRecalls(body: HTMLElement, date: string) {
     const list = this.recalls.get(date) ?? [];
     if (!list.length) return;
-    const box = el.createDiv({ cls: "nu-week-recalls next-up nu-crm" });
-    const head = box.createDiv({ cls: "nu-week-recalls-head" });
-    setIcon(head.createSpan({ cls: "nu-chip-icon" }), "users");
-    head.appendText(`Get back to · ${list.length}`);
-    const rows = box.createDiv({ cls: "nu-rows" });
-    for (const p of list) renderPersonCard(rows, { plugin: this.plugin, sourcePath: "", hoverParent: this.plugin }, p, { compact: true });
+    const rows = body.querySelector<HTMLElement>(".nu-rows");
+    if (!rows) return;
+    rows.querySelector(":scope > .nu-empty")?.remove();
+    const add = rows.querySelector(":scope > .nu-add");
+    const host = { plugin: this.plugin, sourcePath: "", hoverParent: this.plugin, hideMine: onlyMine(this.s.board.owners, this.s.me) };
+    for (const p of list) {
+      const holder = createDiv({ cls: "nu-week-recall nu-crm" });
+      renderPersonCard(holder, host, p, { compact: true });
+      rows.insertBefore(holder, add);
+    }
   }
 
   private filter(projects: string[] = []): BoardFilter {
@@ -237,8 +241,9 @@ export class PlanTab implements BoardTab {
     const head = el.createDiv({ cls: "nu-week-head" });
     head.createSpan({ cls: "nu-week-day-title", text: title });
     this.renderMix(head, day);
-    this.renderRecalls(el, day.date);
-    col.view.render(el.createDiv({ cls: "nu-col-body" }));
+    const body = el.createDiv({ cls: "nu-col-body" });
+    col.view.render(body);
+    this.renderRecalls(body, day.date);
   }
 
   /** The day's projects as a bar (sized by time), how many there are (flagged above the limit), and what is done. */

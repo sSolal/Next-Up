@@ -36,7 +36,7 @@ completed: 2026-09-20 # set when status becomes done
 
 Every field name is configurable in the advanced settings. `status: idea` is *parked*: open, but out of lists, sums and reviews unless a block asks for it (`status: idea`). `status: someday` from older versions reads as `idea`.
 
-Typing a title ending with a duration (`Write the post 1h30`, `Call Bob 15m`) in an add row, Capture or the inbox sets the estimate.
+Typing a title ending with a duration (`Write the post 1h30`, `Call Bob 15m`) in an add row, Capture or the inbox sets the estimate. A link in a title (`Read that https://…`) goes in the note's body; the words name the note (a bare link names it after its site).
 
 **From 0.3:** run *Migrate tasks to v0.4*. `today`/`tonight` tags become `planned:` the day the note was last edited, `tomorrow` the day after (so stale ones show up as leftovers to replan or drop), `this-week` and `frog` are removed, `someday` becomes `idea`. It shows the counts and asks first.
 
@@ -77,17 +77,17 @@ Tabs at the top keep use cases apart: **Dive** (below) digs into everything with
 
 **Late** is any open task planned before today (a leftover), or past its due date with no day planned. Whatever the mode, the header shows how many there are (click: see them by day), and in the other modes late cards come first in their column. When mode treats ideas as any task: their day decides. Other statuses (waiting, review…) sit in To-do with their pill.
 
-**Filters**, remembered per device: **Everyone · Me · each owner · Unassigned** (several at once; Me + Unassigned by default), a **Project** picker (archived projects in a section at the bottom, and *No project*), and a name filter. Tasks added in a column match it: one person selected makes them the owner, one project their project. The fold of each column is remembered too; a folded column still takes cards.
+**Filters**, remembered per device: **Owner**: **Everyone · Me · each owner · Unassigned** (several at once; Me + Unassigned by default; while it shows only your cards, they don't repeat your name), a **Project** picker (archived projects in a section at the bottom, and *No project*), and a name filter. Tasks added in a column match it: one person selected makes them the owner, one project their project. The fold of each column is remembered too; a folded column still takes cards.
 
 ### Plan: the week
 
-One column per day, Monday to Sunday (‹ › change week, *This week* comes back). A day holds what is planned on it, **done or not — done cards in green** — and what was finished on it without a day; dropped tasks are left out. Each card has a stripe of its project's colour. **Tasks with no estimate are red and come first** in their day: estimate them to know the load.
+One column per day, Monday to Sunday (‹ › change week, *This week* comes back). A day holds what is planned on it, **done or not — done cards in green, one line each** — and what was finished on it without a day; dropped tasks are left out. Each card has a stripe of its project's colour. **Tasks with no estimate are red and come first** in their day: estimate them to know the load.
 
 - **Load.** Each day's head shows the time left against the hours of the day (red above them; click to set them), a **bar of its projects** sized by time, how many projects it touches (**orange above 3**: a lot of switching) and the time done (`✓ 2h`, from `spent:` or else the estimate). The bar at the top sums the week: planned · done · left.
 - **Projects of the week.** A row of chips gives the week's time per project; click one (or a segment of a day's bar) to pick out its cards, the others fade.
 - **Backlog** (the column on the right, folded until opened): open tasks with no day, and ideas (the *Ideas* toggle), filtered by project chips (*All*, each project, *No project*, several at once). Drag a card onto a day to plan it there — an idea becomes a to-do — and back onto the Backlog to unplan it. Its add row creates undated tasks, in the project when one is picked.
 - **Adding.** Each day's add row plans new tasks that day; *Capture* is there too.
-- **Get back to.** Above a day's tasks, the people whose `next_contact` is that day (today: everyone late too), one line each, with the funnel's buttons. They follow the people filter.
+- **People to get back to.** Below a day's tasks, the people whose `next_contact` is that day (today: everyone late too), one line each, with the funnel's buttons. They follow the people filter.
 - Saturday and Sunday stay folded while empty (click to open; the ‹‹ on them folds them again). The people filter is shared with Dive.
 
 The simplified statuses (`todo, doing, idea, done, dropped`) are the default. Older vaults keep their list; *Use the simplified statuses* in the settings switches.
@@ -279,7 +279,7 @@ A few blocks make a CRM page: *To recall* (`next: before +7d`), *Gone cold* (`la
 
 *Open people* (ribbon 👥, command, or a link `obsidian://next-up?view=people`, `&tab=discovery`) opens the CRM in a tab of its own:
 
-- **People**: the people who matter beyond discovery (shareholders, advisors…): only those in a `circle`. Everyone starts in the funnel; most people met in discovery don't belong here. To keep one, `⋯` → *Add to People…* gives them a `circle` (`shareholder`, `advisor`, anything), and they stay listed whatever their stage. **Network · Everyone** switches to all people, funnel included, to navigate and fix profiles. Filter by who follows them, circle (*No circle* too), tags, recall (*Late*, *This week*, *No date*) and text; sort by next contact, coldest, warmest or name. Pending LinkedIn invites are folded at the bottom (*N invites pending*), one line each.
+- **People**: the people who matter beyond discovery (shareholders, advisors…): only those in a `circle`. Everyone starts in the funnel; most people met in discovery don't belong here. To keep one, `⋯` → *Add to People…* gives them a `circle` (`shareholder`, `advisor`, anything), and they stay listed whatever their stage. **In a circle · All people** switches to all people, funnel included, to navigate and fix profiles. Filter by who follows them, circle (*No circle* too), tags, recall (*Late*, *This week*, *No date*) and text; sort by next contact, coldest, warmest or name. Pending LinkedIn invites are folded at the bottom (*N invites pending*), one line each.
 - **Discovery**: the funnel as a Kanban, a column per `stage`: **Lead · Contacted · In contact · Meeting · Met · Dropped** (Met and Dropped folded). Drag a card to move it; what is due comes first in each column. The Lead column adds leads in one line.
 
 ### The discovery funnel
@@ -350,11 +350,11 @@ seam for agent loops: progress reports, drift tracking, forgotten projects.
 
 ## Commands
 
-*Open home*, *Open board*, *Archive / unarchive this project*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Plan this task…*, *Plan this task today*, *Estimate this task…*, *Set my hours for today…* / *for tomorrow…*, *Move this task to a board column…* (when board tags are set), *Toggle a tag on this task*, *Migrate tasks to v0.4…*, *In touch with this person today…*, *Next contact with this person…*, *Open people*, *Capture a person…*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
+*Open board*, *Archive / unarchive this project*, *Capture…*, *New task*, *Add a subtask to this task*, *Mark this task done*, *Start / stop this task*, *Plan this task…*, *Plan this task today*, *Estimate this task…*, *Set my hours for today…* / *for tomorrow…*, *Move this task to a board column…* (when board tags are set), *Toggle a tag on this task*, *Migrate tasks to v0.4…*, *In touch with this person today…*, *Next contact with this person…*, *Open people*, *Capture a person…*, *Ask the vault: open*, *Ask the vault: ask a question*, *Ask the vault: show the digest*.
 
 ## Settings
 
-Always visible: **I am**, **Home note**, **Default task folder**, **Board tags** (default none), **Statuses**, **Done statuses**, **Team note**, **Task template**, **Capture kinds**, **Default people folder**, **Person template**, **Follow-ups (days)**, **Cold after (days)**, and under *Time and review*: **Hours in a day**, **Ask how long it took**, **Review again after (days)**, **Stalled after (days)**, **Parked statuses**, **Inbox: ignore notes with**. *Show advanced settings* reveals *Due soon* days, the todo/doing status names, field names and *Ask the vault*. Folds (which tasks are collapsed) are remembered per device.
+Always visible: **I am**, **Default task folder**, **Board tags** (default none), **Statuses**, **Done statuses**, **Team note**, **Task template**, **Capture kinds**, **Default people folder**, **Person template**, **Follow-ups (days)**, **Cold after (days)**, and under *Time and review*: **Hours in a day**, **Ask how long it took**, **Review again after (days)**, **Stalled after (days)**, **Parked statuses**, **Inbox: ignore notes with**. *Show advanced settings* reveals *Due soon* days, the todo/doing status names, field names and *Ask the vault*. Folds (which tasks are collapsed) are remembered per device.
 
 ## Install
 

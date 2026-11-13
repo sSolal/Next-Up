@@ -29,7 +29,6 @@ export class NextUpSettingTab extends PluginSettingTab {
         }),
       );
 
-    this.text(containerEl, "Home note", "The page opened by the ribbon icon.", s.homeNote, (v) => (s.homeNote = v));
     this.text(containerEl, "Default task folder", "Where new tasks go when a block has no `folder:`. Tasks can live anywhere: any note with `type: task` is one.", s.tasksFolder, (v) => (s.tasksFolder = v));
     this.text(containerEl, "Board tags", "Optional, comma-separated tags that act as columns. Days are better planned with `planned:` dates (they expire); leave empty unless you want columns.", s.boardTags.join(", "), (v) => (s.boardTags = list(v).map((x) => x.replace(/^#/, ""))));
     this.text(containerEl, "Statuses", "Comma-separated, in the order a click on the status cycles through them.", s.statuses.join(", "), (v) => (s.statuses = list(v).length ? list(v) : [...SIMPLE_STATUSES]));

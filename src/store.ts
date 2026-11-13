@@ -1,6 +1,6 @@
 import { App, Notice, TFile, TFolder, normalizePath } from "obsidian";
 import type { CaptureKind, NextUpSettings } from "./settingsTypes.ts";
-import { ARCHIVED, type GroupData, type TaskData, type TaskIndex, buildIndex, fillPlaceholders, groupFromFrontmatter, isoDate, linkList, safeFileName, taskFromFrontmatter } from "./model.ts";
+import { ARCHIVED, type GroupData, type TaskData, type TaskIndex, buildIndex, fillPlaceholders, groupFromFrontmatter, isoDate, linkList, safeFileName, splitLink, taskFromFrontmatter } from "./model.ts";
 import { type GroupIndex, buildGroups, v04Patch } from "./plan.ts";
 import { type MovePatch, patchTags } from "./query.ts";
 import { formatDuration } from "./duration.ts";
@@ -304,9 +304,12 @@ export class TaskStore {
     const f = s.fields;
     const folder = normalizePath(spec.folder || s.tasksFolder || "/");
     await this.ensureFolder(folder);
-    const safeTitle = safeFileName(spec.title, "Untitled task");
+    const { title, url } = splitLink(spec.title);
+    const safeTitle = safeFileName(title, "Untitled task");
     const path = this.freePath(folder, safeTitle);
-    const file = await this.app.vault.create(path, await this.templateBody(safeTitle));
+    const body = await this.templateBody(safeTitle);
+    // the link first, where it is seen, then the template
+    const file = await this.app.vault.create(path, url ? `${url}\n\n${body}` : body);
     const parent = spec.parentPath ? this.fileFor(spec.parentPath) : null;
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       fm[f.type] = s.taskType;

@@ -137,8 +137,6 @@ export interface NextUpSettings {
   tasksFolder: string;
   teamNote: string;
   taskTemplate: string;
-  /** The page opened by the ribbon icon. */
-  homeNote: string;
   /** Extra kinds offered by Capture, besides Task. */
   captureKinds: CaptureKind[];
   /** Tags that act as board columns (today, this-week…). A task with none of them is "One day". */
@@ -251,7 +249,6 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   tasksFolder: "Tasks",
   teamNote: "",
   taskTemplate: "",
-  homeNote: "Home.md",
   captureKinds: [],
   boardTags: [],
   statuses: [...SIMPLE_STATUSES],
@@ -284,12 +281,11 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
 };
 
 /** Keys of older versions (scoring, snooze, revisit…) dropped on load. */
-const REMOVED_KEYS = ["todoNote", "snoozeDays", "nowMin", "revisitDays", "weights", "somedayStatus", "contextType"];
+const REMOVED_KEYS = ["homeNote", "todoNote", "snoozeDays", "nowMin", "revisitDays", "weights", "somedayStatus", "contextType"];
 
 /** Merge stored data over the defaults, migrating renamed keys and dropping removed ones. */
 export function mergeSettings(raw: unknown): NextUpSettings {
   const data = { ...((raw ?? {}) as Record<string, any>) };
-  if (data.homeNote == null && typeof data.todoNote === "string") data.homeNote = data.todoNote;
   for (const k of REMOVED_KEYS) delete data[k];
   const fields = { ...DEFAULT_FIELDS, ...(data.fields ?? {}) };
   for (const k of Object.keys(fields)) if (!(k in DEFAULT_FIELDS)) delete (fields as Record<string, string>)[k];
