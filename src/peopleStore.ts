@@ -98,10 +98,21 @@ export class PeopleStore {
     const f = this.settings.fields;
     const today = isoDate(new Date());
     await this.tasks.update(file, { [f.lastContact]: today, [f.nextContact]: next });
+    await this.appendLog(file, today, note);
+  }
+
+  /** A funnel step (follow-up sent, dropped…): its frontmatter patch, and a line in `## Log` when given. */
+  async applyFunnel(file: TFile, patch: Record<string, unknown>, note?: string): Promise<void> {
+    if (!Object.keys(patch).length) return;
+    await this.tasks.update(file, patch);
+    if (note) await this.appendLog(file, isoDate(new Date()), note);
+  }
+
+  private async appendLog(file: TFile, date: string, note: string): Promise<void> {
     await this.app.vault.process(file, (text) => {
       const m = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
       const head = m ? m[0] : "";
-      return head + appendLogLine(text.slice(head.length), today, note);
+      return head + appendLogLine(text.slice(head.length), date, note);
     });
   }
 

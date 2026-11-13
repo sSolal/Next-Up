@@ -1,6 +1,5 @@
-/* A tab of the board: one use case each (Dive into everything, Plan the week…). */
+/* A tab of a tabbed view: one use case each (Dive into everything, Plan the week, the Discovery funnel…). */
 import type NextUpPlugin from "../main.ts";
-import type { BoardTabId } from "../settingsTypes.ts";
 import type { Ctx } from "../query.ts";
 
 /** What a tab gets from the board around it. */
@@ -14,7 +13,7 @@ export interface TabHost {
 }
 
 export interface BoardTab {
-  id: BoardTabId;
+  id: string;
   label: string;
   icon: string;
   /** draw everything: the bar and the body are empty */

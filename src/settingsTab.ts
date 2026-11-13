@@ -81,6 +81,10 @@ export class NextUpSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("People").setDesc("For `next-up-crm` blocks: any note with `type: person` is a person.").setHeading();
     this.text(containerEl, "Default people folder", "Where the add row of a `next-up-crm` block creates people when the block has no `folder:`.", s.peopleFolder, (v) => (s.peopleFolder = v));
     this.text(containerEl, "Person template", "Note copied for new people (optional). Its frontmatter is kept; the block's tags and fields are added.", s.personTemplate, (v) => (s.personTemplate = v));
+    this.text(containerEl, "Follow-ups (days)", "Discovery funnel: days before each follow-up after a first message, comma-separated. After the last one, it offers to drop the person.", s.followUpDays.join(", "), (v) => {
+      const days = v.split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0).map(Math.round);
+      if (days.length) s.followUpDays = days;
+    });
     this.number(containerEl, "Cold after (days)", "A last contact older than this shows in orange (and matches `last: stale`).", s.staleDays, (v) => (s.staleDays = Math.max(1, Math.round(v))));
 
     new Setting(containerEl).setName("Show advanced settings").addToggle((t) =>

@@ -1,5 +1,6 @@
 import type { NextUpSettings } from "./settingsTypes.ts";
-import { addDays, daysBetween, linkBasename, normTag, parseDate, parseTags } from "./model.ts";
+import { addDays, daysBetween, linkBasename, normTag, parseDate, parseNumber, parseTags } from "./model.ts";
+import { type Stage, stageOf } from "./funnel.ts";
 import { type Bool, baseName, dueLabel, folderOf, parseBool, resolveDate, splitList } from "./query.ts";
 
 /* ---------- people ---------- */
@@ -23,6 +24,12 @@ export interface PersonData {
   next?: string;
   /** `next_contact: never`: no need to get back to them proactively */
   never: boolean;
+  /** discovery funnel stage, when in the funnel */
+  stage?: Stage;
+  /** follow-ups sent since the first message */
+  followups: number;
+  /** first contact was a LinkedIn invite, no message yet */
+  invite: boolean;
   /** every frontmatter value, lower-cased (links as their basename), for `key: value` filters */
   props: Record<string, string[]>;
   mtime: number;
@@ -83,6 +90,9 @@ export function personFromFrontmatter(fm: Record<string, unknown>, path: string,
     lastField: parseDate(fm[f.lastContact]),
     next: parseDate(fm[f.nextContact]),
     never: String(fm[f.nextContact] ?? "").trim().toLowerCase() === NEVER,
+    stage: stageOf(fm[f.stage]),
+    followups: Math.max(0, Math.floor(parseNumber(fm[f.followups]) ?? 0)),
+    invite: String(fm[f.via] ?? "").trim().toLowerCase() === "invite",
     props,
     mtime,
   };

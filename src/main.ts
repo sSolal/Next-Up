@@ -18,6 +18,9 @@ import { ObsidianNoteSource, requestUrlTransport } from "./kb/kbStore.ts";
 import { AskVaultView, VIEW_TYPE_ASK } from "./kb/askView.ts";
 import { AskPromptModal, DigestModal } from "./kb/digestModal.ts";
 import { BoardView, VIEW_TYPE_BOARD } from "./boardView.ts";
+import { PeopleView, VIEW_TYPE_PEOPLE } from "./peopleView.ts";
+import { TabbedView } from "./tabbedView.ts";
+import { capturePerson } from "./personCard.ts";
 
 export default class NextUpPlugin extends Plugin {
   settings: NextUpSettings = DEFAULT_SETTINGS;
@@ -40,6 +43,7 @@ export default class NextUpPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE_ASK, (leaf) => new AskVaultView(leaf, this));
     this.registerView(VIEW_TYPE_BOARD, (leaf) => new BoardView(leaf, this));
+    this.registerView(VIEW_TYPE_PEOPLE, (leaf) => new PeopleView(leaf, this));
     const invalidate = () => {
       this.store.invalidate();
       this.people.invalidate();
@@ -90,11 +94,20 @@ export default class NextUpPlugin extends Plugin {
 
     this.addRibbonIcon("list-checks", "Open home", () => this.openHome());
     this.addRibbonIcon("kanban", "Open board", () => void this.openBoard());
+    this.addRibbonIcon("users", "Open people", () => void this.openView(VIEW_TYPE_PEOPLE));
     this.addRibbonIcon("plus-circle", "Capture", () => this.openCapture());
 
     // id kept from the "Todo" days so existing hotkeys still work
     this.addCommand({ id: "open-todo", name: "Open home", callback: () => this.openHome() });
     this.addCommand({ id: "open-board", name: "Open board", callback: () => void this.openBoard() });
+    this.addCommand({ id: "open-people", name: "Open people (CRM and discovery funnel)", callback: () => void this.openView(VIEW_TYPE_PEOPLE) });
+    this.addCommand({ id: "capture-person", name: "Capture a person…", callback: () => capturePerson(this) });
+    // links in notes: obsidian://next-up?view=people (or board), &tab=discovery
+    this.registerObsidianProtocolHandler("next-up", (params) => {
+      const people = params.view === "people";
+      if (people && params.tab) this.settings.people.tab = params.tab === "discovery" ? "discovery" : "people";
+      void this.openView(people ? VIEW_TYPE_PEOPLE : VIEW_TYPE_BOARD);
+    });
     this.addCommand({ id: "capture", name: "Capture…", callback: () => this.openCapture() });
     this.addCommand({ id: "new-task", name: "New task", callback: () => this.openCapture({ task: true }) });
     this.addCommand({
@@ -288,14 +301,25 @@ export default class NextUpPlugin extends Plugin {
   /** Capture dialog. Tasks default to me as owner and, from a task note, to its project. */
   openCapture(preset: CapturePreset = {}) {
     const kinds = captureKindsFor(this.settings.captureKinds, this.settings.tasksFolder);
-    new CaptureModal(this.app, this.store, kinds, { ...preset, owner: preset.owner ?? this.settings.me, project: preset.project ?? this.activeTask()?.project }).open();
+    new CaptureModal(this.app, this.store, kinds, {
+      ...preset,
+      owner: preset.owner ?? this.settings.me,
+      project: preset.project ?? this.activeTask()?.project,
+      onPerson: (name) => capturePerson(this, { name }),
+    }).open();
   }
 
   /** The board in a tab of its own (the open one, if any). */
   async openBoard() {
+    await this.openView(VIEW_TYPE_BOARD);
+  }
+
+  /** A view of the plugin (board, people) in a tab of its own: the open one, if any. */
+  async openView(type: string) {
     const ws = this.app.workspace;
-    const leaf = ws.getLeavesOfType(VIEW_TYPE_BOARD)[0] ?? ws.getLeaf("tab");
-    if (leaf.view.getViewType() !== VIEW_TYPE_BOARD) await leaf.setViewState({ type: VIEW_TYPE_BOARD, active: true });
+    const leaf = ws.getLeavesOfType(type)[0] ?? ws.getLeaf("tab");
+    if (leaf.view.getViewType() !== type) await leaf.setViewState({ type, active: true });
+    else if (leaf.view instanceof TabbedView) leaf.view.render();
     await ws.revealLeaf(leaf);
   }
 

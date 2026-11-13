@@ -8,6 +8,10 @@ import { hue } from "../color.ts";
 import { type DaySummary, MAX_PROJECTS_PER_DAY, NO_PROJECT, type ProjectMinutes, isoWeek, weekDays, weekSummary } from "../week.ts";
 import type { BoardTab, TabHost } from "./tab.ts";
 import { captureButton, peopleChips, searchBox } from "./filterBar.ts";
+import type { PersonData } from "../crm.ts";
+import { recallsOn } from "../funnel.ts";
+import { renderPersonCard } from "../personCard.ts";
+import { ownerMatch } from "../peopleTabs/filters.ts";
 
 interface Column {
   host: ListHost;
@@ -50,6 +54,8 @@ export class PlanTab implements BoardTab {
   private text = "";
   /** the project whose cards stand out (lower-cased, or `none`) */
   private highlight: string | null = null;
+  /** day → people to get back to that day (today: the late ones too) */
+  private recalls = new Map<string, PersonData[]>();
 
   constructor(host: TabHost) {
     this.host = host;
@@ -70,6 +76,18 @@ export class PlanTab implements BoardTab {
   isShown(path: string): boolean {
     for (const c of this.columns.values()) if (c.view.shown.has(path)) return true;
     return false;
+  }
+
+  /** The people to get back to that day, as one-line cards above its tasks. */
+  private renderRecalls(el: HTMLElement, date: string) {
+    const list = this.recalls.get(date) ?? [];
+    if (!list.length) return;
+    const box = el.createDiv({ cls: "nu-week-recalls next-up nu-crm" });
+    const head = box.createDiv({ cls: "nu-week-recalls-head" });
+    setIcon(head.createSpan({ cls: "nu-chip-icon" }), "users");
+    head.appendText(`Get back to · ${list.length}`);
+    const rows = box.createDiv({ cls: "nu-rows" });
+    for (const p of list) renderPersonCard(rows, { plugin: this.plugin, sourcePath: "", hoverParent: this.plugin }, p, { compact: true });
   }
 
   private filter(projects: string[] = []): BoardFilter {
@@ -136,6 +154,10 @@ export class PlanTab implements BoardTab {
     this.sumEl.setText(total ? `${formatDuration(total)} planned · ${formatDuration(week.doneMin)} done · ${formatDuration(week.leftMin)} left` : "");
     this.renderLegend(week.projects);
 
+    // who to get back to, for the people shown
+    const people = this.plugin.people.loadIndex().people.filter((p) => ownerMatch(p.owner, this.s.board.owners, ctx.me));
+    this.recalls = new Map(days.map((d) => [d, d < ctx.today ? [] : recallsOn(people, d, ctx.today)]));
+
     const scroll = this.colsEl.scrollLeft;
     this.colsEl.empty();
     const live = new Set<string>();
@@ -193,7 +215,7 @@ export class PlanTab implements BoardTab {
     const col = this.column(def.id, el, def);
     ListView.wireBlockDrop(el, this.plugin, () => col.view);
 
-    if (weekend && !this.prefs.showWeekend && !day.projects.length) {
+    if (weekend && !this.prefs.showWeekend && !day.projects.length && !this.recalls.get(day.date)?.length) {
       el.addClass("is-folded");
       el.setAttr("aria-label", "Show the weekend");
       el.createDiv({ cls: "nu-col-label", text: title });
@@ -215,6 +237,7 @@ export class PlanTab implements BoardTab {
     const head = el.createDiv({ cls: "nu-week-head" });
     head.createSpan({ cls: "nu-week-day-title", text: title });
     this.renderMix(head, day);
+    this.renderRecalls(el, day.date);
     col.view.render(el.createDiv({ cls: "nu-col-body" }));
   }
 

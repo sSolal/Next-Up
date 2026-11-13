@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, SuggestModal } from "obsidian";
 import { type ResolvedKind, type TaskData, isoDate } from "./model.ts";
 import { resolveDate } from "./query.ts";
 import { NEVER, RECALL_PRESETS } from "./crm.ts";
+import { nameFromLinkedIn } from "./funnel.ts";
 import type { NewTaskSpec, TaskStore } from "./store.ts";
 import { ESTIMATE_PRESETS, formatDuration, parseDuration, splitEstimate } from "./duration.ts";
 
@@ -73,6 +74,8 @@ export interface CapturePreset {
   /** vault path of the parent task */
   parentPath?: string;
   project?: string;
+  /** offers "Person…": closes and captures a person with the typed title as name */
+  onPerson?: (name: string) => void;
 }
 
 /** One-line capture: a task (stays closed, for fast repeated capture) or a note of a configured kind (opened). */
@@ -109,6 +112,15 @@ export class CaptureModal extends Modal {
         const b = row.createEl("button", { cls: "next-up-seg", text: k.label, attr: { title: i < 9 ? `${i + 1}` : "" } });
         b.addEventListener("click", () => this.select(i));
         return b;
+      });
+    }
+    if (this.preset.onPerson && !this.preset.parentPath) {
+      const onPerson = this.preset.onPerson;
+      const row = contentEl.querySelector<HTMLElement>(".next-up-kinds") ?? contentEl.createDiv({ cls: "next-up-segmented next-up-kinds" });
+      const b = row.createEl("button", { cls: "next-up-seg", text: "Person…", attr: { title: "Capture a person for the CRM" } });
+      b.addEventListener("click", () => {
+        this.close();
+        onPerson(this.title.trim());
       });
     }
     if (this.preset.parentPath) contentEl.createDiv({ cls: "next-up-muted", text: `Subtask of ${this.preset.parentPath.replace(/\.md$/, "").split("/").pop()}` });
@@ -575,6 +587,148 @@ export class TriageModal extends Modal {
     if (action === "dismiss") return this.onDone({ action });
     lastTriage.project = this.spec.project;
     this.onDone({ action, spec: { ...this.spec, title: this.spec.title.trim() } });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/** How a captured person enters the funnel. */
+export type PersonStart = "invite" | "message" | "lead" | "none";
+
+export interface PersonCapture {
+  name: string;
+  contact?: string;
+  /** "Head of R&D @ Arkema" */
+  roleOrg?: string;
+  owner?: string;
+  tags: string[];
+  start: PersonStart;
+}
+
+const STARTS: { id: PersonStart; label: string; tip: string }[] = [
+  { id: "invite", label: "Invite sent", tip: "LinkedIn invite sent: follow up in a couple of days" },
+  { id: "message", label: "Message sent", tip: "First message sent: the follow-ups start" },
+  { id: "lead", label: "Lead", tip: "To reach out to" },
+  { id: "none", label: "Not in funnel", tip: "Just a contact" },
+];
+
+/**
+ * Capture a person in one go: name (or paste their LinkedIn URL), one line "role @ org", owner, tags, and how
+ * far we got. Enter adds; Mod+Enter adds and stays open for the next one (after a LinkedIn session).
+ */
+export class PersonCaptureModal extends Modal {
+  private v: PersonCapture;
+  private team: string[];
+  private allTags: string[];
+  private onSubmit: (p: PersonCapture) => void;
+  private inputs: HTMLInputElement[] = [];
+
+  constructor(app: App, init: Partial<PersonCapture>, team: string[], allTags: string[], onSubmit: (p: PersonCapture) => void) {
+    super(app);
+    this.v = { name: "", tags: [], start: "invite", ...init };
+    this.team = team;
+    this.allTags = allTags;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("next-up-modal", "next-up-capture", "next-up-person-capture");
+    this.titleEl.setText("Capture a person");
+    this.inputs = [];
+
+    const field = (placeholder: string, value: string | undefined, set: (v: string) => void) => {
+      const input = contentEl.createEl("input", { type: "text", cls: "next-up-capture-title", attr: { placeholder } });
+      input.value = value ?? "";
+      input.addEventListener("input", () => set(input.value));
+      input.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
+        this.submit(e.ctrlKey || e.metaKey);
+      });
+      this.inputs.push(input);
+      return input;
+    };
+    const name = field("Name, or paste their LinkedIn URL", this.v.name, (x) => (this.v.name = x));
+    const contact = field("LinkedIn URL, email or phone", this.v.contact, (x) => (this.v.contact = x));
+    field("Role @ Org (one line)", this.v.roleOrg, (x) => (this.v.roleOrg = x));
+    // a pasted profile URL goes to the contact, and gives a first guess of the name
+    name.addEventListener("input", () => {
+      const url = name.value.trim();
+      if (!/^https?:\/\//i.test(url)) return;
+      this.v.contact = contact.value = url;
+      this.v.name = name.value = nameFromLinkedIn(url) ?? "";
+      name.select();
+    });
+    contact.addEventListener("input", () => {
+      const guess = nameFromLinkedIn(contact.value);
+      if (guess && !this.v.name.trim()) this.v.name = name.value = guess;
+    });
+
+    const starts = contentEl.createDiv({ cls: "next-up-segmented" });
+    const startBtns = STARTS.map((s) => {
+      const b = starts.createEl("button", { cls: "next-up-seg", text: s.label, attr: { title: s.tip } });
+      b.addEventListener("click", () => pickStart(s.id));
+      return { b, id: s.id };
+    });
+    const pickStart = (id: PersonStart) => {
+      this.v.start = id;
+      for (const x of startBtns) x.b.toggleClass("is-active", x.id === id);
+    };
+    pickStart(this.v.start);
+
+    new Setting(contentEl).setName("Followed by").addDropdown((d) => {
+      d.addOption("", "— nobody —");
+      for (const n of this.team) d.addOption(n, n);
+      d.setValue(this.v.owner ?? "");
+      d.onChange((x) => (this.v.owner = x || undefined));
+    });
+
+    const tagsEl = contentEl.createDiv({ cls: "next-up-segmented next-up-person-tags" });
+    const drawTags = () => {
+      tagsEl.empty();
+      for (const t of [...new Set([...this.allTags, ...this.v.tags])].sort()) {
+        const on = this.v.tags.includes(t);
+        const b = tagsEl.createEl("button", { cls: "next-up-seg", text: `#${t}` });
+        b.toggleClass("is-active", on);
+        b.addEventListener("click", () => {
+          this.v.tags = on ? this.v.tags.filter((x) => x !== t) : [...this.v.tags, t];
+          drawTags();
+        });
+      }
+      const add = tagsEl.createEl("input", { type: "text", cls: "next-up-person-newtag", attr: { placeholder: "+ tag" } });
+      add.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const t = add.value.trim().replace(/^#/, "").toLowerCase();
+        if (t && !this.v.tags.includes(t)) this.v.tags.push(t);
+        drawTags();
+        tagsEl.querySelector<HTMLInputElement>(".next-up-person-newtag")?.focus();
+      });
+    };
+    drawTags();
+
+    new Setting(contentEl)
+      .addButton((b) => b.setButtonText("Add another").setTooltip("Mod+Enter: add, and stay open for the next one").onClick(() => this.submit(true)))
+      .addButton((b) => b.setButtonText("Add").setCta().onClick(() => this.submit(false)));
+    setTimeout(() => name.focus(), 0);
+  }
+
+  private submit(another: boolean) {
+    const name = this.v.name.trim();
+    if (!name) {
+      new Notice("Give them a name.");
+      return;
+    }
+    this.onSubmit({ ...this.v, name, contact: this.v.contact?.trim() || undefined, roleOrg: this.v.roleOrg?.trim() || undefined });
+    if (!another) return this.close();
+    // the same session usually shares owner, tags and stage: keep them
+    this.v = { name: "", tags: this.v.tags, start: this.v.start, owner: this.v.owner };
+    this.onOpen();
   }
 
   onClose() {

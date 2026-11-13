@@ -33,6 +33,12 @@ export interface FieldNames {
   role: string;
   org: string;
   contact: string;
+  /** on people: where they are in the discovery funnel */
+  stage: string;
+  /** on people: follow-ups sent since the first message */
+  followups: string;
+  /** on people: `invite` when the first contact is a LinkedIn invite */
+  via: string;
 }
 
 /** "Ask the vault": local model over a deterministic digest of the vault. */
@@ -79,6 +85,25 @@ export interface BoardPrefs {
 }
 
 export type BoardTabId = "dive" | "plan";
+
+/** The People view: its tab and filters. Per device. */
+export interface PeoplePrefs {
+  tab: "people" | "discovery";
+  /** owners shown: names, `me`, `none`; empty = everyone */
+  owners: string[];
+  /** stages shown in the People tab (`none` = not in the funnel); empty = all */
+  stages: string[];
+  /** tags shown; empty = all */
+  tags: string[];
+  recall: "all" | "late" | "week" | "none";
+  sort: "next" | "last" | "recent" | "name";
+  /** pending LinkedIn invites listed in full in the People tab */
+  showInvites: boolean;
+  /** Discovery column → folded, when it differs from its default */
+  folded: Record<string, boolean>;
+}
+
+export const DEFAULT_PEOPLE: PeoplePrefs = { tab: "people", owners: [], stages: [], tags: [], recall: "all", sort: "next", showInvites: false, folded: {} };
 export const BOARD_TAB_IDS: BoardTabId[] = ["dive", "plan"];
 
 /** The Plan tab: its week and the backlog of undated tasks beside it. */
@@ -159,6 +184,9 @@ export interface NextUpSettings {
   /** Notes with one of these frontmatter keys are left out of inboxes (`kanban-plugin`, `nextup: ignore`). */
   inboxIgnoreKeys: string[];
   board: BoardPrefs;
+  /** Days before each follow-up after a first message; after the last one, the funnel offers to drop. */
+  followUpDays: number[];
+  people: PeoplePrefs;
 }
 
 export const DEFAULT_KB: KbConfig = {
@@ -201,6 +229,9 @@ export const DEFAULT_FIELDS: FieldNames = {
   role: "role",
   org: "org",
   contact: "contact",
+  stage: "stage",
+  followups: "followups",
+  via: "via",
 };
 
 /** The short status list: to do, in progress (shown as Open on the board), one day, finished, abandoned. */
@@ -243,6 +274,8 @@ export const DEFAULT_SETTINGS: NextUpSettings = {
   askSpent: true,
   inboxIgnoreKeys: ["kanban-plugin", "nextup"],
   board: { ...DEFAULT_BOARD },
+  followUpDays: [2, 7, 7],
+  people: { ...DEFAULT_PEOPLE },
 };
 
 /** Keys of older versions (scoring, snooze, revisit…) dropped on load. */
@@ -270,6 +303,8 @@ export function mergeSettings(raw: unknown): NextUpSettings {
     capacity: data.capacity && typeof data.capacity === "object" ? data.capacity : {},
     inboxIgnoreKeys: Array.isArray(data.inboxIgnoreKeys) ? data.inboxIgnoreKeys : [...DEFAULT_SETTINGS.inboxIgnoreKeys],
     board: mergeBoard(data.board),
+    followUpDays: Array.isArray(data.followUpDays) && data.followUpDays.length && data.followUpDays.every((n: unknown) => typeof n === "number" && n > 0) ? data.followUpDays : [...DEFAULT_SETTINGS.followUpDays],
+    people: mergePeople(data.people),
   };
   // every done status must be a status
   for (const d of out.doneStatuses) if (!out.statuses.includes(d)) out.statuses.push(d);
@@ -291,6 +326,23 @@ function mergeBoard(raw: unknown): BoardPrefs {
     folded: b.folded && typeof b.folded === "object" ? (b.folded as Record<string, boolean>) : {},
     tab: BOARD_TAB_IDS.includes(b.tab as BoardTabId) ? (b.tab as BoardTabId) : DEFAULT_BOARD.tab,
     plan: mergePlan(b.plan, strs),
+  };
+}
+
+function mergePeople(raw: unknown): PeoplePrefs {
+  const p = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const pick = <T extends string>(v: unknown, all: T[], d: T): T => (all.includes(v as T) ? (v as T) : d);
+  const d = DEFAULT_PEOPLE;
+  return {
+    tab: pick(p.tab, ["people", "discovery"], d.tab),
+    owners: strs(p.owners),
+    stages: strs(p.stages),
+    tags: strs(p.tags),
+    recall: pick(p.recall, ["all", "late", "week", "none"], d.recall),
+    sort: pick(p.sort, ["next", "last", "recent", "name"], d.sort),
+    showInvites: typeof p.showInvites === "boolean" ? p.showInvites : d.showInvites,
+    folded: p.folded && typeof p.folded === "object" ? (p.folded as Record<string, boolean>) : {},
   };
 }
 

@@ -310,3 +310,28 @@ button.nu-week-this { height: auto; padding: 3px 10px; font-size: var(--font-ui-
 .nu-week-backlog-chips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 6.5em; overflow-y: auto; }
 .nu-week-backlog-chips .nu-board-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; }
 .nu-week-sep { width: 1px; align-self: stretch; background: var(--background-modifier-border); margin: 0 2px; }
+
+/* ---------- 0.7: people view, funnel, recalls ---------- */
+.nu-person.is-compact { align-items: center; padding-top: 2px; padding-bottom: 2px; }
+.nu-person.is-compact .nu-person-main { flex-direction: row; align-items: baseline; gap: 6px; min-width: 0; }
+.nu-person.is-compact .nu-person-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nu-person[draggable="true"] { cursor: grab; }
+.nu-person.is-dragging { opacity: 0.4; }
+.nu-chip.nu-owner { font-weight: 600; min-width: 1.6em; justify-content: center; }
+.nu-chip.nu-stage { color: var(--text-muted); background: var(--background-primary-alt); }
+.nu-chip.nu-next.is-follow-up.is-overdue, .nu-chip.nu-next.is-drop.is-overdue { font-weight: 600; }
+.nu-chip.nu-next.is-drop { color: var(--text-error); }
+.nu-action.is-primary { color: var(--text-accent); }
+.nu-people-list { max-width: 980px; overflow-y: auto; padding: 0 4px 16px; }
+.nu-people-sort { font-size: var(--font-ui-small); }
+.nu-people-invites-head { display: flex; align-items: center; gap: 4px; margin: 14px 0 4px 8px; cursor: pointer; color: var(--text-muted); font-size: var(--font-ui-small); }
+.nu-people-invites-head:hover { color: var(--text-normal); }
+.nu-funnel-col .nu-week-head { flex-direction: row; align-items: center; gap: 6px; }
+.nu-funnel-col .nu-col-body { overflow-y: auto; }
+.nu-funnel-col.is-drop-target { outline: 2px dashed var(--interactive-accent); outline-offset: -2px; }
+.nu-week-recalls { flex: 0 0 auto; margin: 0 0 6px; padding: 4px 0; border-bottom: 1px solid var(--background-modifier-border); }
+.nu-week-recalls-head { display: flex; align-items: center; gap: 4px; padding: 0 4px 2px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.nu-week-recalls .nu-rows { padding: 0; }
+.nu-week-recalls .nu-person .nu-chips { flex-wrap: nowrap; }
+.next-up-person-tags { margin: 6px 0; }
+.next-up-person-newtag { width: 7em; font-size: var(--font-ui-small); }

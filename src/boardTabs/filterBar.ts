@@ -4,13 +4,13 @@ import type { TabHost } from "./tab.ts";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-/** Everyone · me · each other owner · unassigned: toggles over `board.owners`; none on = everyone. */
-export function peopleChips(bar: HTMLElement, host: TabHost) {
+/** Everyone · me · each other owner · unassigned: toggles over `prefs.owners` (the board's by default); none on = everyone. */
+export function peopleChips(bar: HTMLElement, host: TabHost, prefs: { owners: string[] } = host.plugin.settings.board, extra: string[] = []) {
   const el = bar.createDiv({ cls: "nu-board-people" });
   const s = host.plugin.settings;
-  const p = s.board;
+  const p = prefs;
   const me = s.me;
-  const others = host.plugin.store.teamMembers().filter((n) => !same(n, me));
+  const others = [...new Set([...host.plugin.store.teamMembers(), ...extra])].filter((n) => !same(n, me)).sort((a, b) => a.localeCompare(b));
   const chip = (label: string, on: boolean, click: () => void, tip?: string) => {
     const c = el.createSpan({ cls: "nu-board-chip", text: label, attr: tip ? { "aria-label": tip } : {} });
     c.toggleClass("is-active", on);
